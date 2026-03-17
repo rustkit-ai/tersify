@@ -137,7 +137,7 @@ pub fn try_stub_bodies(input: &str, lang: &Language) -> Option<String> {
 
     let bytes = input.as_bytes();
     let mut ranges: Vec<(usize, usize)> = Vec::new();
-    collect_body_ranges(root, bytes, config.fn_kinds, config.body_field, &mut ranges);
+    collect_body_ranges(root, config.fn_kinds, config.body_field, &mut ranges);
 
     if ranges.is_empty() {
         return None;
@@ -150,27 +150,26 @@ pub fn try_stub_bodies(input: &str, lang: &Language) -> Option<String> {
 
 fn collect_body_ranges(
     node: tree_sitter::Node<'_>,
-    src: &[u8],
     fn_kinds: &[&str],
     body_field: &str,
     out: &mut Vec<(usize, usize)>,
 ) {
-    if fn_kinds.contains(&node.kind()) {
-        if let Some(body) = node.child_by_field_name(body_field) {
-            // Skip abstract / interface methods that have no real body
-            // (body node exists but is just a semicolon → byte length ≤ 1)
-            if body.end_byte() - body.start_byte() > 1 {
-                out.push((body.start_byte(), body.end_byte()));
-                // Don't recurse into the body — nested fns are intentionally omitted
-                return;
-            }
+    if fn_kinds.contains(&node.kind())
+        && let Some(body) = node.child_by_field_name(body_field)
+    {
+        // Skip abstract / interface methods that have no real body
+        // (body node exists but is just a semicolon → byte length ≤ 1)
+        if body.end_byte() - body.start_byte() > 1 {
+            out.push((body.start_byte(), body.end_byte()));
+            // Don't recurse into the body — nested fns are intentionally omitted
+            return;
         }
     }
 
     let mut cursor = node.walk();
     if cursor.goto_first_child() {
         loop {
-            collect_body_ranges(cursor.node(), src, fn_kinds, body_field, out);
+            collect_body_ranges(cursor.node(), fn_kinds, body_field, out);
             if !cursor.goto_next_sibling() {
                 break;
             }
