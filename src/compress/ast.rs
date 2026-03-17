@@ -155,8 +155,10 @@ fn is_java_method(s: &str) -> bool {
     if !name.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
         return false; // method names start lowercase; constructors handled separately
     }
-    !["if", "while", "for", "switch", "catch", "try", "new", "return", "throw", "else"]
-        .contains(name)
+    ![
+        "if", "while", "for", "switch", "catch", "try", "new", "return", "throw", "else",
+    ]
+    .contains(name)
 }
 
 /// Strip language visibility/async/unsafe modifiers to expose the core keyword.
@@ -516,8 +518,7 @@ mod tests {
 
     #[test]
     fn stubs_java_method() {
-        let src =
-            "public class Foo {\n    public int add(int a, int b) {\n        return a + b;\n    }\n}\n";
+        let src = "public class Foo {\n    public int add(int a, int b) {\n        return a + b;\n    }\n}\n";
         let out = stub_bodies(src, &Language::Java);
         assert!(out.contains("public class Foo {"));
         assert!(out.contains("public int add(int a, int b)"));

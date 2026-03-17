@@ -224,7 +224,12 @@ fn call_compress(id: Option<Value>, args: &Value) -> Value {
         None => detect::detect(text),
     };
 
-    let opts = compress::CompressOptions { budget, ast, smart, strip_docs: false };
+    let opts = compress::CompressOptions {
+        budget,
+        ast,
+        smart,
+        strip_docs: false,
+    };
 
     let compressed = match compress::compress_with(text, &ct, &opts) {
         Ok(c) => c,
@@ -324,18 +329,12 @@ fn call_estimate_cost(id: Option<Value>, args: &Value) -> Value {
         return error_response(
             id,
             -32602,
-            &format!(
-                "No model matched \"{}\"",
-                model_filter.unwrap_or("")
-            ),
+            &format!("No model matched \"{}\"", model_filter.unwrap_or("")),
         );
     }
 
     let mut lines = vec![
-        format!(
-            "{} → {} tokens ({:.0}% saved)",
-            before, after, saved_pct
-        ),
+        format!("{} → {} tokens ({:.0}% saved)", before, after, saved_pct),
         String::new(),
         format!(
             "{:<22} {:>12} {:>12} {:>12}",
@@ -471,7 +470,12 @@ mod tests {
         assert!(meta["tokens_before"].as_u64().unwrap() > 0);
         let models = meta["models"].as_array().unwrap();
         assert!(!models.is_empty());
-        assert!(models[0]["model"].as_str().unwrap().contains("claude-sonnet"));
+        assert!(
+            models[0]["model"]
+                .as_str()
+                .unwrap()
+                .contains("claude-sonnet")
+        );
     }
 
     #[test]

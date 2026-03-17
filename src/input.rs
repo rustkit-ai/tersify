@@ -29,10 +29,10 @@ const INCLUDE_EXT: &[&str] = &[
     "rs", // Python
     "py", // JavaScript / TypeScript
     "js", "jsx", "mjs", "cjs", "ts", "tsx", // Go
-    "go", // Ruby
+    "go",  // Ruby
     "rb", "rake", "gemspec", // Java
-    "java", // C / C++
-    "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", // Swift
+    "java",    // C / C++
+    "c", "cpp", "cc", "cxx", "h", "hpp", "hxx",   // Swift
     "swift", // Kotlin
     "kt", "kts", // Data / config
     "json", "jsonc", "yaml", "yml", "toml", // Logs / diffs

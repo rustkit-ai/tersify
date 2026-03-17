@@ -75,7 +75,10 @@ pub fn run() -> Result<()> {
     );
     println!("{}", "─".repeat(col_label + col_num * 2 + 14));
 
-    let ast_opts = CompressOptions { ast: true, ..Default::default() };
+    let ast_opts = CompressOptions {
+        ast: true,
+        ..Default::default()
+    };
     let mut ast_before = 0usize;
     let mut ast_after = 0usize;
 
@@ -640,7 +643,6 @@ class UserProfileRepository(
     }
 }
 "#;
-
 
 const JSON_SAMPLE: &str = r#"{
   "id": "usr_7f2a91bc",

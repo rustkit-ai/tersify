@@ -219,15 +219,17 @@ mod tests {
     fn rust_simple_function() {
         let src = "fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
         let out = try_stub_bodies(src, &Language::Rust).unwrap();
-        assert!(out.contains("fn add(a: i32, b: i32) -> i32"), "sig preserved");
+        assert!(
+            out.contains("fn add(a: i32, b: i32) -> i32"),
+            "sig preserved"
+        );
         assert!(!out.contains("a + b"), "body removed");
         assert!(out.contains("/* ... */"), "stub marker present");
     }
 
     #[test]
     fn rust_multiline_sig() {
-        let src =
-            "pub async fn complex<T: Clone>(\n    x: T,\n    y: u32,\n) -> Option<T> {\n    Some(x)\n}\n";
+        let src = "pub async fn complex<T: Clone>(\n    x: T,\n    y: u32,\n) -> Option<T> {\n    Some(x)\n}\n";
         let out = try_stub_bodies(src, &Language::Rust).unwrap();
         assert!(out.contains("pub async fn complex"), "sig preserved");
         assert!(!out.contains("Some(x)"), "body removed");
@@ -277,7 +279,10 @@ mod tests {
         let src =
             "class Calc {\n    public int add(int a, int b) {\n        return a + b;\n    }\n}\n";
         let out = try_stub_bodies(src, &Language::Java).unwrap();
-        assert!(out.contains("public int add(int a, int b)"), "sig preserved");
+        assert!(
+            out.contains("public int add(int a, int b)"),
+            "sig preserved"
+        );
         assert!(!out.contains("return a + b"), "body removed");
     }
 
@@ -321,8 +326,7 @@ mod tests {
 
     #[test]
     fn cpp_class_method() {
-        let src =
-            "class Calc {\npublic:\n    int multiply(int a, int b) {\n        return a * b;\n    }\n};\n";
+        let src = "class Calc {\npublic:\n    int multiply(int a, int b) {\n        return a * b;\n    }\n};\n";
         let out = try_stub_bodies(src, &Language::C).unwrap();
         assert!(out.contains("int multiply(int a, int b)"), "sig preserved");
         assert!(!out.contains("return a * b"), "body removed");
@@ -342,9 +346,13 @@ mod tests {
 
     #[test]
     fn csharp_method() {
-        let src = "class Calc {\n    public int Add(int a, int b) {\n        return a + b;\n    }\n}\n";
+        let src =
+            "class Calc {\n    public int Add(int a, int b) {\n        return a + b;\n    }\n}\n";
         let out = try_stub_bodies(src, &Language::CSharp).unwrap();
-        assert!(out.contains("public int Add(int a, int b)"), "sig preserved");
+        assert!(
+            out.contains("public int Add(int a, int b)"),
+            "sig preserved"
+        );
         assert!(!out.contains("return a + b"), "body removed");
     }
 

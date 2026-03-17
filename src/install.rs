@@ -283,6 +283,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn windsurf_rule_path_structure() {
         let path = windsurf_rule_path().unwrap();
         let s = path.to_string_lossy();
@@ -292,6 +293,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn cursor_rule_path_structure() {
         let path = cursor_rule_path().unwrap();
         let s = path.to_string_lossy();
@@ -301,6 +303,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn claude_hooks_path_structure() {
         let path = claude_hooks_path().unwrap();
         let s = path.to_string_lossy();
