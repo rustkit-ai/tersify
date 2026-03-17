@@ -16,7 +16,7 @@ pub struct Cli {
     /// Files or directories to compress (defaults to stdin)
     pub inputs: Vec<String>,
 
-    /// Force content type: code | json | logs | diff | text
+    /// Force content type: code | rust | python | js | ts | go | ruby | java | c | swift | kotlin | json | logs | diff | text
     #[arg(long, short = 't')]
     pub r#type: Option<String>,
 
@@ -27,18 +27,59 @@ pub struct Cli {
     /// Show token count before/after on stderr
     #[arg(long, short = 'v')]
     pub verbose: bool,
+
+    /// Extract function signatures only — stub all function bodies with `{ /* ... */ }`
+    #[arg(long, short = 'a')]
+    pub ast: bool,
+
+    /// Enable semantic near-duplicate deduplication (MinHash-based)
+    #[arg(long, short = 's')]
+    pub smart: bool,
+
+    /// Also strip doc comments (///, //!, /** */, Python docstrings)
+    #[arg(long)]
+    pub strip_docs: bool,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Install tersify hooks into Claude Code
-    Install,
-    /// Remove tersify hooks from Claude Code
-    Uninstall,
+    /// Install tersify hooks into your AI coding environment
+    Install {
+        /// Install for Cursor IDE (~/.cursor/rules/tersify.mdc)
+        #[arg(long, conflicts_with = "windsurf")]
+        cursor: bool,
+        /// Install for Windsurf IDE (~/.windsurf/rules/tersify.md)
+        #[arg(long, conflicts_with = "cursor")]
+        windsurf: bool,
+    },
+    /// Remove tersify hooks
+    Uninstall {
+        /// Remove Cursor IDE rule
+        #[arg(long, conflicts_with = "windsurf")]
+        cursor: bool,
+        /// Remove Windsurf IDE rule
+        #[arg(long, conflicts_with = "cursor")]
+        windsurf: bool,
+    },
     /// Show token savings statistics
     Stats,
     /// Reset saved statistics
     StatsReset,
+    /// Benchmark compression savings across all content types
+    Bench,
+    /// Estimate LLM API cost before and after compression
+    TokenCost {
+        /// Files or directories to analyse (defaults to stdin)
+        inputs: Vec<String>,
+        /// Filter to a specific model (e.g. claude-sonnet, gpt-4o)
+        #[arg(long, short = 'm')]
+        model: Option<String>,
+        /// Force content type
+        #[arg(long, short = 't')]
+        r#type: Option<String>,
+    },
+    /// Start an MCP server over stdio (register with: claude mcp add tersify -- tersify mcp)
+    Mcp,
     /// Print shell completion script
     Completions {
         /// Target shell

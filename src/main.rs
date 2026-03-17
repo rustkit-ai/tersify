@@ -1,26 +1,45 @@
+mod bench;
 mod cli;
 mod completions;
 mod install;
+mod mcp;
 mod stats;
+mod token_cost;
 
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Command};
+use install::Target;
 use is_terminal::IsTerminal;
 use std::{
     io::{self, Read},
     path::Path,
 };
-use tersify::{input, tokens};
+use tersify::{compress::CompressOptions, input, tokens};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Install) => install::run()?,
-        Some(Command::Uninstall) => install::uninstall()?,
+        Some(Command::Install { cursor, windsurf }) => {
+            let target = resolve_target(cursor, windsurf);
+            install::run_with_opts(target)?;
+        }
+        Some(Command::Uninstall { cursor, windsurf }) => {
+            let target = resolve_target(cursor, windsurf);
+            install::uninstall_with_opts(target)?;
+        }
         Some(Command::Stats) => stats::run()?,
         Some(Command::StatsReset) => stats::reset()?,
+        Some(Command::Bench) => bench::run()?,
+        Some(Command::TokenCost {
+            inputs,
+            model,
+            r#type,
+        }) => {
+            token_cost::run(&inputs, r#type.as_deref(), model.as_deref())?;
+        }
+        Some(Command::Mcp) => mcp::run()?,
         Some(Command::Completions { shell }) => completions::run(shell)?,
         None => run_compress(cli)?,
     }
@@ -28,10 +47,18 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn resolve_target(cursor: bool, windsurf: bool) -> Target {
+    if cursor {
+        Target::Cursor
+    } else if windsurf {
+        Target::Windsurf
+    } else {
+        Target::ClaudeCode
+    }
+}
+
 fn run_compress(cli: Cli) -> Result<()> {
-    // ── Resolve inputs ───────────────────────────────────────────────────────
     if cli.inputs.is_empty() {
-        // No paths given — require piped stdin
         if io::stdin().is_terminal() {
             eprintln!(
                 "tersify: no input provided.\n\nUsage:\n  cat file.rs | tersify\n  git diff   | tersify\n  tersify src/\n  tersify --help"
@@ -41,6 +68,7 @@ fn run_compress(cli: Cli) -> Result<()> {
         return compress_stdin(&cli);
     }
 
+    let opts = build_opts(&cli, None);
     let forced = cli.r#type.as_deref();
     let mut total_before = 0usize;
     let mut total_after = 0usize;
@@ -54,13 +82,12 @@ fn run_compress(cli: Cli) -> Result<()> {
         }
 
         if path.is_dir() {
-            let (out, before, after) = input::compress_directory(path, forced, cli.budget)?;
+            let (out, before, after) = input::compress_directory_with(path, forced, &opts)?;
             print!("{}", out);
             total_before += before;
             total_after += after;
         } else {
-            let (out, before, after) = input::compress_file(path, forced, cli.budget)?;
-            // Print a header when processing multiple files
+            let (out, before, after) = input::compress_file_with(path, forced, &opts)?;
             if inputs_count > 1 {
                 println!("// === {} ===", path.display());
             }
@@ -70,7 +97,7 @@ fn run_compress(cli: Cli) -> Result<()> {
         }
     }
 
-    report(cli.verbose, total_before, total_after, forced.is_some())?;
+    report(cli.verbose, total_before, total_after)?;
     Ok(())
 }
 
@@ -82,15 +109,25 @@ fn compress_stdin(cli: &Cli) -> Result<()> {
         return Ok(());
     }
 
+    let opts = build_opts(cli, None);
     let (out, before, after) =
-        input::compress_content(&buf, cli.r#type.as_deref(), None, cli.budget)?;
+        input::compress_content_with(&buf, cli.r#type.as_deref(), None, &opts)?;
 
     print!("{}", out);
-    report(cli.verbose, before, after, false)?;
+    report(cli.verbose, before, after)?;
     Ok(())
 }
 
-fn report(verbose: bool, before: usize, after: usize, _forced: bool) -> Result<()> {
+fn build_opts(cli: &Cli, budget_override: Option<usize>) -> CompressOptions {
+    CompressOptions {
+        budget: budget_override.or(cli.budget),
+        ast: cli.ast,
+        smart: cli.smart,
+        strip_docs: cli.strip_docs,
+    }
+}
+
+fn report(verbose: bool, before: usize, after: usize) -> Result<()> {
     if verbose {
         let pct = tokens::savings_pct(before, after);
         eprintln!(

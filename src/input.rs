@@ -1,7 +1,7 @@
 //! Input resolution: stdin, single file, multiple files, directories.
 
 use crate::{
-    compress,
+    compress::{self, CompressOptions},
     detect::{self, ContentType},
     error::Result,
     tokens,
@@ -25,11 +25,22 @@ const SKIP_DIRS: &[&str] = &[
 
 /// File extensions to include during directory traversal.
 const INCLUDE_EXT: &[&str] = &[
-    "rs", "py", "js", "jsx", "mjs", "ts", "tsx", "go", "json", "jsonc", "log", "diff", "patch",
-    "md", "txt", "yaml", "yml", "toml",
+    // Rust ecosystem
+    "rs", // Python
+    "py", // JavaScript / TypeScript
+    "js", "jsx", "mjs", "cjs", "ts", "tsx", // Go
+    "go", // Ruby
+    "rb", "rake", "gemspec", // Java
+    "java", // C / C++
+    "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", // Swift
+    "swift", // Kotlin
+    "kt", "kts", // Data / config
+    "json", "jsonc", "yaml", "yml", "toml", // Logs / diffs
+    "log", "diff", "patch", // Docs
+    "md", "txt",
 ];
 
-/// Compress a single file, returning the compressed content.
+/// Compress a single file, returning `(compressed, tokens_before, tokens_after)`.
 pub fn compress_file(
     path: &Path,
     forced_type: Option<&str>,
@@ -39,6 +50,16 @@ pub fn compress_file(
     compress_content(&content, forced_type, Some(path), budget)
 }
 
+/// Compress a single file with full [`CompressOptions`].
+pub fn compress_file_with(
+    path: &Path,
+    forced_type: Option<&str>,
+    opts: &CompressOptions,
+) -> Result<(String, usize, usize)> {
+    let content = std::fs::read_to_string(path)?;
+    compress_content_with(&content, forced_type, Some(path), opts)
+}
+
 /// Compress raw content (e.g. from stdin).
 pub fn compress_content(
     content: &str,
@@ -46,9 +67,27 @@ pub fn compress_content(
     path: Option<&Path>,
     budget: Option<usize>,
 ) -> Result<(String, usize, usize)> {
+    compress_content_with(
+        content,
+        forced_type,
+        path,
+        &CompressOptions {
+            budget,
+            ..Default::default()
+        },
+    )
+}
+
+/// Compress raw content with full [`CompressOptions`].
+pub fn compress_content_with(
+    content: &str,
+    forced_type: Option<&str>,
+    path: Option<&Path>,
+    opts: &CompressOptions,
+) -> Result<(String, usize, usize)> {
     let ct = resolve_type(forced_type, path, content)?;
     let before = tokens::count(content);
-    let compressed = compress::compress(content, &ct, budget)?;
+    let compressed = compress::compress_with(content, &ct, opts)?;
     let after = tokens::count(&compressed);
     Ok((compressed, before, after))
 }
@@ -59,6 +98,22 @@ pub fn compress_directory(
     forced_type: Option<&str>,
     budget: Option<usize>,
 ) -> Result<(String, usize, usize)> {
+    compress_directory_with(
+        dir,
+        forced_type,
+        &CompressOptions {
+            budget,
+            ..Default::default()
+        },
+    )
+}
+
+/// Compress all eligible files in a directory with full [`CompressOptions`].
+pub fn compress_directory_with(
+    dir: &Path,
+    forced_type: Option<&str>,
+    opts: &CompressOptions,
+) -> Result<(String, usize, usize)> {
     let mut combined = String::new();
     let mut total_before = 0usize;
     let mut total_after = 0usize;
@@ -67,7 +122,6 @@ pub fn compress_directory(
         .follow_links(false)
         .into_iter()
         .filter_entry(|e| {
-            // Skip hidden and known large/irrelevant directories
             !e.file_name()
                 .to_str()
                 .map(|s| s.starts_with('.') || SKIP_DIRS.contains(&s))
@@ -99,8 +153,15 @@ pub fn compress_directory(
             detect::detect_for_path(entry.path(), &content)
         };
 
+        let file_opts = CompressOptions {
+            budget: None, // budget is applied to combined output below
+            ast: opts.ast,
+            smart: opts.smart,
+            strip_docs: opts.strip_docs,
+        };
+
         let before = tokens::count(&content);
-        let compressed = compress::compress(&content, &ct, None)?;
+        let compressed = compress::compress_with(&content, &ct, &file_opts)?;
         let after = tokens::count(&compressed);
 
         total_before += before;
@@ -114,7 +175,7 @@ pub fn compress_directory(
     }
 
     // Apply budget to the combined output
-    let final_output = match budget {
+    let final_output = match opts.budget {
         Some(limit) if tokens::count(&combined) > limit => enforce_budget(combined, limit),
         _ => combined,
     };
