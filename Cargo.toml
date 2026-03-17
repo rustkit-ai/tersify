@@ -1,0 +1,31 @@
+[package]
+name = "tersify"
+version = "0.1.0"
+edition = "2024"
+description = "Universal LLM context compressor — pipe anything, get token-optimized output"
+license = "MIT"
+repository = "https://github.com/rustkit-ai/tersify"
+homepage = "https://github.com/rustkit-ai/tersify"
+documentation = "https://docs.rs/tersify"
+readme = "README.md"
+keywords = ["llm", "context", "tokens", "compression", "ai"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "tersify"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tersify"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+is-terminal = "0.4"
+regex-lite = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+walkdir = "2"
