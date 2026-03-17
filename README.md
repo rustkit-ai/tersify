@@ -34,9 +34,6 @@ No network calls. No configuration. Deterministic output.
 ## Install
 
 ```bash
-# Homebrew
-brew install rustkit-ai/tap/tersify
-
 # cargo
 cargo install tersify
 

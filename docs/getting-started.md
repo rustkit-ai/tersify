@@ -2,12 +2,6 @@
 
 ## Install
 
-**Homebrew (recommended)**
-
-```bash
-brew install rustkit-ai/tap/tersify
-```
-
 **cargo**
 
 ```bash

@@ -747,7 +747,6 @@ Log files save around 78% by collapsing repeated identical lines into one.
 When you use tersify, you can save between 30% and 78% of your tokens depending
 on the content type. Code files typically save around 31% by removing comments.
 
-Install tersify with Homebrew: brew install rustkit-ai/tap/tersify
-Or from crates.io: cargo install tersify
+Install tersify from crates.io: cargo install tersify
 Run `tersify install` once to automatically compress files as Claude reads them.
 "#;
