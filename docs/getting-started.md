@@ -8,10 +8,6 @@
 cargo install tersify
 ```
 
-**Pre-built binaries**
-
-Download from [github.com/rustkit-ai/tersify/releases](https://github.com/rustkit-ai/tersify/releases) — no Rust toolchain required.
-
 Verify the install:
 
 ```bash

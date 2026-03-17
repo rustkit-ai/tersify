@@ -37,7 +37,6 @@ No network calls. No configuration. Deterministic output.
 # cargo
 cargo install tersify
 
-# Pre-built binaries — https://github.com/rustkit-ai/tersify/releases
 ```
 
 ---
