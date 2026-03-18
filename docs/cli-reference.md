@@ -37,10 +37,12 @@ tersify src/ --budget 2000                 # cap at 2000 tokens
 ## Install / Uninstall
 
 ```bash
-tersify install                  # hook into Claude Code
-tersify install --cursor         # hook into Cursor
-tersify install --windsurf       # hook into Windsurf
+tersify install --all            # auto-detect and hook into all present editors
+tersify install                  # hook into Claude Code only
+tersify install --cursor         # hook into Cursor only
+tersify install --windsurf       # hook into Windsurf only
 
+tersify uninstall --all          # remove hooks from all detected editors
 tersify uninstall                # remove Claude Code hook
 tersify uninstall --cursor       # remove Cursor rule
 tersify uninstall --windsurf     # remove Windsurf rule

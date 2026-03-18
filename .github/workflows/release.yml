@@ -104,6 +104,9 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Copy install script
+        run: cp install.sh artifacts/install.sh
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -111,15 +114,23 @@ jobs:
           body: |
             ## Install
 
+            **One-liner (macOS / Linux)**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/rustkit-ai/tersify/main/install.sh | bash
+            ```
+            Downloads the binary, adds it to `~/.local/bin`, and hooks into all detected AI editors (Claude Code, Cursor, Windsurf) automatically.
+
             **Cargo**
             ```bash
             cargo install tersify
+            tersify install --all   # hook into all detected editors
             ```
 
-            **Direct download** — pick the archive for your platform, verify the `.sha256`, put the binary on your `$PATH`.
+            **Direct download** — pick the archive for your platform below, verify the `.sha256`, put the binary on your `$PATH`, then run `tersify install --all`.
 
             See [CHANGELOG](https://github.com/rustkit-ai/tersify/blob/main/CHANGELOG.md) for what changed.
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
             artifacts/**/*.sha256
+            artifacts/install.sh

@@ -4,6 +4,28 @@ The most powerful way to use tersify: install it once, forget about it, and let 
 
 ---
 
+## Install everything at once
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rustkit-ai/tersify/main/install.sh | bash
+```
+
+This single command:
+1. Downloads the tersify binary for your platform (macOS or Linux)
+2. Adds it to `~/.local/bin`
+3. Detects which AI editors you have installed
+4. Hooks into all of them automatically
+
+**Or if you already have tersify installed:**
+
+```bash
+tersify install --all
+```
+
+Auto-detects Claude Code, Cursor, and Windsurf on your machine and installs hooks for all of them in one go.
+
+---
+
 ## Claude Code
 
 ### Install (one command)
@@ -155,6 +177,14 @@ tersify stats
 ```
 
 At $3/M tokens (claude-sonnet-4.6), 1.7M tokens saved ≈ **$5 saved**.
+
+---
+
+## Uninstall everything
+
+```bash
+tersify uninstall --all    # remove hooks from all detected editors
+```
 
 ---
 

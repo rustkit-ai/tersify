@@ -46,20 +46,26 @@ pub enum Command {
     /// Install tersify hooks into your AI coding environment
     Install {
         /// Install for Cursor IDE (~/.cursor/rules/tersify.mdc)
-        #[arg(long, conflicts_with = "windsurf")]
+        #[arg(long, conflicts_with_all = ["windsurf", "all"])]
         cursor: bool,
         /// Install for Windsurf IDE (~/.windsurf/rules/tersify.md)
-        #[arg(long, conflicts_with = "cursor")]
+        #[arg(long, conflicts_with_all = ["cursor", "all"])]
         windsurf: bool,
+        /// Auto-detect and install for all present editors (Claude Code + Cursor + Windsurf)
+        #[arg(long, conflicts_with_all = ["cursor", "windsurf"])]
+        all: bool,
     },
     /// Remove tersify hooks
     Uninstall {
         /// Remove Cursor IDE rule
-        #[arg(long, conflicts_with = "windsurf")]
+        #[arg(long, conflicts_with_all = ["windsurf", "all"])]
         cursor: bool,
         /// Remove Windsurf IDE rule
-        #[arg(long, conflicts_with = "cursor")]
+        #[arg(long, conflicts_with_all = ["cursor", "all"])]
         windsurf: bool,
+        /// Remove hooks from all detected editors
+        #[arg(long, conflicts_with_all = ["cursor", "windsurf"])]
+        all: bool,
     },
     /// Show token savings statistics
     Stats,

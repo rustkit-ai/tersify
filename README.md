@@ -33,11 +33,20 @@ No network calls. No configuration. Deterministic output.
 
 ## Install
 
-```bash
-# cargo
-cargo install tersify
+**One-liner — installs the binary and hooks into all your AI editors automatically:**
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/rustkit-ai/tersify/main/install.sh | bash
 ```
+
+**cargo**
+
+```bash
+cargo install tersify
+tersify install --all   # hook into Claude Code, Cursor, Windsurf (auto-detects)
+```
+
+**Pre-built binaries** — [github.com/rustkit-ai/tersify/releases](https://github.com/rustkit-ai/tersify/releases)
 
 ---
 
@@ -152,29 +161,29 @@ tersify token-cost src/        # estimate API cost
 
 ## Integrate with your AI editor
 
-### Claude Code
+### All editors at once (recommended)
 
 ```bash
-tersify install
+tersify install --all
 ```
 
-One command. Every file Claude reads is now automatically compressed before it enters the context window — no workflow changes required.
+Auto-detects Claude Code, Cursor, and Windsurf on your machine and hooks into all of them in one go.
 
 ```bash
-tersify uninstall              # remove the hook
+tersify uninstall --all        # remove all hooks
 ```
 
-### Cursor
+### Individual editors
 
 ```bash
-tersify install --cursor
+tersify install                # Claude Code only
+tersify install --cursor       # Cursor only
+tersify install --windsurf     # Windsurf only
 ```
 
-### Windsurf
+### Claude Code — how it works
 
-```bash
-tersify install --windsurf
-```
+tersify registers a `PreToolUse` hook in `~/.claude/hooks.json`. Every file Claude reads is automatically compressed before it enters the context window — no workflow changes required.
 
 ---
 

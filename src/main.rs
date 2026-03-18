@@ -21,13 +21,29 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Install { cursor, windsurf }) => {
-            let target = resolve_target(cursor, windsurf);
-            install::run_with_opts(target)?;
+        Some(Command::Install {
+            cursor,
+            windsurf,
+            all,
+        }) => {
+            if all {
+                install::run_all()?;
+            } else {
+                let target = resolve_target(cursor, windsurf);
+                install::run_with_opts(target)?;
+            }
         }
-        Some(Command::Uninstall { cursor, windsurf }) => {
-            let target = resolve_target(cursor, windsurf);
-            install::uninstall_with_opts(target)?;
+        Some(Command::Uninstall {
+            cursor,
+            windsurf,
+            all,
+        }) => {
+            if all {
+                install::uninstall_all()?;
+            } else {
+                let target = resolve_target(cursor, windsurf);
+                install::uninstall_with_opts(target)?;
+            }
         }
         Some(Command::Stats) => stats::run()?,
         Some(Command::StatsReset) => stats::reset()?,

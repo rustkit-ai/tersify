@@ -44,7 +44,7 @@ tersify removes comments, collapses blank lines, strips null JSON fields,
 and deduplicates repeated log lines — saving 30–78% of tokens with no loss
 of information.
 
-Install: `cargo install tersify` or `brew install rustkit-ai/tap/tersify`
+Install: `cargo install tersify` or download from https://github.com/rustkit-ai/tersify/releases
 "#;
 
 /// Target IDE for install/uninstall.
@@ -71,6 +71,89 @@ pub fn uninstall_with_opts(target: Target) -> Result<()> {
         Target::Cursor => uninstall_cursor(),
         Target::Windsurf => uninstall_windsurf(),
     }
+}
+
+/// Detect which AI editors are present on this machine.
+fn detect_installed_targets() -> Vec<Target> {
+    let home = match std::env::var("HOME") {
+        Ok(h) => std::path::PathBuf::from(h),
+        Err(_) => return vec![Target::ClaudeCode], // always attempt Claude Code
+    };
+
+    let mut targets = Vec::new();
+
+    // Claude Code — ~/.claude/ directory exists or `claude` is on PATH
+    if home.join(".claude").exists() || which_exists("claude") {
+        targets.push(Target::ClaudeCode);
+    } else {
+        // Always try Claude Code even if not detected — creates the dir
+        targets.push(Target::ClaudeCode);
+    }
+
+    // Cursor — ~/.cursor/ directory exists
+    if home.join(".cursor").exists() {
+        targets.push(Target::Cursor);
+    }
+
+    // Windsurf — ~/.windsurf/ directory exists
+    if home.join(".windsurf").exists() {
+        targets.push(Target::Windsurf);
+    }
+
+    targets
+}
+
+fn which_exists(cmd: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(cmd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Install tersify hooks into all detected AI editors.
+pub fn run_all() -> Result<()> {
+    let targets = detect_installed_targets();
+
+    if targets.is_empty() {
+        println!("No supported AI editors detected. Run one of:");
+        println!("  tersify install            # Claude Code");
+        println!("  tersify install --cursor   # Cursor");
+        println!("  tersify install --windsurf # Windsurf");
+        return Ok(());
+    }
+
+    println!("Detected editors: {}", format_targets(&targets));
+    println!();
+
+    for target in targets {
+        run_with_opts(target)?;
+    }
+
+    println!();
+    println!("✓ All done! Run `tersify stats` to track your token savings.");
+    Ok(())
+}
+
+/// Uninstall tersify hooks from all detected AI editors.
+pub fn uninstall_all() -> Result<()> {
+    let targets = detect_installed_targets();
+    for target in targets {
+        let _ = uninstall_with_opts(target); // best-effort
+    }
+    Ok(())
+}
+
+fn format_targets(targets: &[Target]) -> String {
+    targets
+        .iter()
+        .map(|t| match t {
+            Target::ClaudeCode => "Claude Code",
+            Target::Cursor => "Cursor",
+            Target::Windsurf => "Windsurf",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ── Claude Code ──────────────────────────────────────────────────────────────
@@ -226,7 +309,7 @@ cat file.rs | tersify --ast   # signatures only
 tersify removes comments, blank lines, null JSON fields, and deduplicates
 repeated log lines — saving 30–78% of tokens with no information loss.
 
-Install: `cargo install tersify` or `brew install rustkit-ai/tap/tersify`
+Install: `cargo install tersify` or download from https://github.com/rustkit-ai/tersify/releases
 "#;
 
 fn install_windsurf() -> Result<()> {
