@@ -6,10 +6,11 @@ use crate::{
     error::Result,
     tokens,
 };
+use rayon::prelude::*;
 use std::path::Path;
 use walkdir::WalkDir;
 
-/// Directories and files to skip during directory traversal.
+/// Directories to always skip during directory traversal.
 const SKIP_DIRS: &[&str] = &[
     "target",
     "node_modules",
@@ -39,6 +40,82 @@ const INCLUDE_EXT: &[&str] = &[
     "log", "diff", "patch", // Docs
     "md", "txt",
 ];
+
+// ── .tersifyignore ────────────────────────────────────────────────────────────
+
+/// Load ignore patterns from `.tersifyignore` in `dir`.
+///
+/// Lines starting with `#` are comments. Trailing `/` is stripped (treated
+/// as a directory name). `*` is supported as a wildcard within a segment.
+fn load_ignore_patterns(dir: &Path) -> Vec<String> {
+    let path = dir.join(".tersifyignore");
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    content
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.trim_end_matches('/').to_string())
+        .collect()
+}
+
+/// Returns `true` if `path` matches any ignore pattern.
+///
+/// Matching rules:
+/// - A pattern with no `/` is matched against every path component (basename).
+/// - A pattern with `/` is matched against the path relative to the root dir.
+/// - `*` within a segment matches any sequence of non-`/` characters.
+fn is_ignored(path: &Path, root: &Path, patterns: &[String]) -> bool {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    let rel_str = rel.to_string_lossy();
+
+    for pattern in patterns {
+        if pattern.contains('/') {
+            // Match against relative path
+            if glob_match(pattern, &rel_str) {
+                return true;
+            }
+        } else {
+            // Match against each path component
+            for component in rel.components() {
+                if let Some(s) = component.as_os_str().to_str()
+                    && glob_match(pattern, s)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Minimal glob: supports `*` wildcard (matches any sequence within a segment).
+fn glob_match(pattern: &str, text: &str) -> bool {
+    glob_match_bytes(pattern.as_bytes(), text.as_bytes())
+}
+
+fn glob_match_bytes(p: &[u8], t: &[u8]) -> bool {
+    match p.first() {
+        None => t.is_empty(),
+        Some(&b'*') => {
+            // * matches zero or more characters
+            for skip in 0..=t.len() {
+                if glob_match_bytes(&p[1..], &t[skip..]) {
+                    return true;
+                }
+            }
+            false
+        }
+        Some(&pc) => match t.first() {
+            Some(&tc) if tc == pc => glob_match_bytes(&p[1..], &t[1..]),
+            _ => false,
+        },
+    }
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 /// Compress a single file, returning `(compressed, tokens_before, tokens_after)`.
 pub fn compress_file(
@@ -109,23 +186,31 @@ pub fn compress_directory(
 }
 
 /// Compress all eligible files in a directory with full [`CompressOptions`].
+///
+/// Files are processed in parallel (rayon). `.tersifyignore` in `dir` is
+/// respected. Output is deterministically ordered by file path.
 pub fn compress_directory_with(
     dir: &Path,
     forced_type: Option<&str>,
     opts: &CompressOptions,
 ) -> Result<(String, usize, usize)> {
-    let mut combined = String::new();
-    let mut total_before = 0usize;
-    let mut total_after = 0usize;
+    let ignore_patterns = load_ignore_patterns(dir);
 
-    let entries = WalkDir::new(dir)
+    // ── Collect + sort all eligible file paths ────────────────────────────
+    let mut paths: Vec<std::path::PathBuf> = WalkDir::new(dir)
         .follow_links(false)
         .into_iter()
         .filter_entry(|e| {
-            !e.file_name()
-                .to_str()
-                .map(|s| s.starts_with('.') || SKIP_DIRS.contains(&s))
-                .unwrap_or(false)
+            let name = e.file_name().to_str().unwrap_or("");
+            // Skip hardcoded dirs
+            if e.file_type().is_dir() && (name.starts_with('.') || SKIP_DIRS.contains(&name)) {
+                return false;
+            }
+            // Skip .tersifyignore-matched entries
+            if !ignore_patterns.is_empty() && is_ignored(e.path(), dir, &ignore_patterns) {
+                return false;
+            }
+            true
         })
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
@@ -135,43 +220,49 @@ pub fn compress_directory_with(
                 .and_then(|ext| ext.to_str())
                 .map(|ext| INCLUDE_EXT.contains(&ext))
                 .unwrap_or(false)
-        });
+        })
+        .map(|e| e.into_path())
+        .collect();
 
-    for entry in entries {
-        let content = match std::fs::read_to_string(entry.path()) {
-            Ok(c) => c,
-            Err(_) => continue, // skip binary / unreadable files
-        };
+    paths.sort();
 
-        if content.trim().is_empty() {
-            continue;
-        }
+    // ── Process files in parallel ─────────────────────────────────────────
+    let file_opts = CompressOptions {
+        budget: None, // budget applied to combined output below
+        ast: opts.ast,
+        smart: opts.smart,
+        strip_docs: opts.strip_docs,
+    };
 
-        let ct = if let Some(t) = forced_type {
-            t.parse::<ContentType>()?
-        } else {
-            detect::detect_for_path(entry.path(), &content)
-        };
+    let results: Vec<(String, usize, usize)> = paths
+        .par_iter()
+        .filter_map(|path| {
+            let content = std::fs::read_to_string(path).ok()?;
+            if content.trim().is_empty() {
+                return None;
+            }
+            let ct = if let Some(t) = forced_type {
+                t.parse::<ContentType>().ok()?
+            } else {
+                detect::detect_for_path(path, &content)
+            };
+            let before = tokens::count(&content);
+            let compressed = compress::compress_with(&content, &ct, &file_opts).ok()?;
+            let after = tokens::count(&compressed);
+            let chunk = format!("// === {} ===\n{}\n\n", path.display(), compressed);
+            Some((chunk, before, after))
+        })
+        .collect();
 
-        let file_opts = CompressOptions {
-            budget: None, // budget is applied to combined output below
-            ast: opts.ast,
-            smart: opts.smart,
-            strip_docs: opts.strip_docs,
-        };
+    // ── Merge results (in path-sorted order from par_iter) ────────────────
+    let mut combined = String::new();
+    let mut total_before = 0usize;
+    let mut total_after = 0usize;
 
-        let before = tokens::count(&content);
-        let compressed = compress::compress_with(&content, &ct, &file_opts)?;
-        let after = tokens::count(&compressed);
-
+    for (chunk, before, after) in results {
+        combined.push_str(&chunk);
         total_before += before;
         total_after += after;
-
-        combined.push_str(&format!(
-            "// === {} ===\n{}\n\n",
-            entry.path().display(),
-            compressed
-        ));
     }
 
     // Apply budget to the combined output

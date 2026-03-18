@@ -1,6 +1,7 @@
 mod bench;
 mod cli;
 mod completions;
+mod config;
 mod install;
 mod mcp;
 mod stats;
@@ -15,10 +16,13 @@ use std::{
     io::{self, Read},
     path::Path,
 };
-use tersify::{compress::CompressOptions, input, tokens};
+use tersify::{compress::CompressOptions, detect, input, tokens};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Load config — CLI flags take precedence over config values.
+    let cfg = config::Config::load();
 
     match cli.command {
         Some(Command::Install {
@@ -57,7 +61,7 @@ fn main() -> Result<()> {
         }
         Some(Command::Mcp) => mcp::run()?,
         Some(Command::Completions { shell }) => completions::run(shell)?,
-        None => run_compress(cli)?,
+        None => run_compress(cli, &cfg)?,
     }
 
     Ok(())
@@ -73,7 +77,7 @@ fn resolve_target(cursor: bool, windsurf: bool) -> Target {
     }
 }
 
-fn run_compress(cli: Cli) -> Result<()> {
+fn run_compress(cli: Cli, cfg: &config::Config) -> Result<()> {
     if cli.inputs.is_empty() {
         if io::stdin().is_terminal() {
             eprintln!(
@@ -81,10 +85,10 @@ fn run_compress(cli: Cli) -> Result<()> {
             );
             std::process::exit(1);
         }
-        return compress_stdin(&cli);
+        return compress_stdin(&cli, cfg);
     }
 
-    let opts = build_opts(&cli, None);
+    let opts = build_opts(&cli, cfg, None);
     let forced = cli.r#type.as_deref();
     let mut total_before = 0usize;
     let mut total_after = 0usize;
@@ -103,21 +107,40 @@ fn run_compress(cli: Cli) -> Result<()> {
             total_before += before;
             total_after += after;
         } else {
-            let (out, before, after) = input::compress_file_with(path, forced, &opts)?;
+            let content = std::fs::read_to_string(path)?;
+            let ct = if let Some(t) = forced {
+                t.parse::<tersify::detect::ContentType>()?
+            } else {
+                detect::detect_for_path(path, &content)
+            };
+            let lang = ct.lang_str();
+            let before = tokens::count(&content);
+            let compressed = tersify::compress::compress_with(&content, &ct, &opts)?;
+            let after = tokens::count(&compressed);
+
             if inputs_count > 1 {
                 println!("// === {} ===", path.display());
             }
-            print!("{}", out);
+            print!("{}", compressed);
             total_before += before;
             total_after += after;
+
+            // Record per-language stats for single file
+            let _ = stats::record_with_lang(before, after, Some(lang));
         }
     }
 
-    report(cli.verbose, total_before, total_after)?;
+    // For directory compression, record totals only (language breakdown happens inside)
+    if cli.inputs.iter().any(|p| Path::new(p).is_dir()) {
+        report(cli.verbose, total_before, total_after, None)?;
+    } else {
+        report_verbose_only(cli.verbose, total_before, total_after)?;
+    }
+
     Ok(())
 }
 
-fn compress_stdin(cli: &Cli) -> Result<()> {
+fn compress_stdin(cli: &Cli, cfg: &config::Config) -> Result<()> {
     let mut buf = String::new();
     io::stdin().read_to_string(&mut buf)?;
 
@@ -125,25 +148,33 @@ fn compress_stdin(cli: &Cli) -> Result<()> {
         return Ok(());
     }
 
-    let opts = build_opts(cli, None);
-    let (out, before, after) =
-        input::compress_content_with(&buf, cli.r#type.as_deref(), None, &opts)?;
+    let opts = build_opts(cli, cfg, None);
+    let ct = if let Some(t) = &cli.r#type {
+        t.parse::<tersify::detect::ContentType>()?
+    } else {
+        detect::detect(&buf)
+    };
+    let lang = ct.lang_str();
+    let before = tokens::count(&buf);
+    let compressed = tersify::compress::compress_with(&buf, &ct, &opts)?;
+    let after = tokens::count(&compressed);
 
-    print!("{}", out);
-    report(cli.verbose, before, after)?;
+    print!("{}", compressed);
+    report(cli.verbose, before, after, Some(lang))?;
     Ok(())
 }
 
-fn build_opts(cli: &Cli, budget_override: Option<usize>) -> CompressOptions {
+fn build_opts(cli: &Cli, cfg: &config::Config, budget_override: Option<usize>) -> CompressOptions {
     CompressOptions {
-        budget: budget_override.or(cli.budget),
-        ast: cli.ast,
-        smart: cli.smart,
-        strip_docs: cli.strip_docs,
+        // CLI flag overrides config, config overrides default (false)
+        ast: cli.ast || cfg.defaults.ast,
+        smart: cli.smart || cfg.defaults.smart,
+        strip_docs: cli.strip_docs || cfg.defaults.strip_docs,
+        budget: budget_override.or(cli.budget).or(cfg.defaults.budget),
     }
 }
 
-fn report(verbose: bool, before: usize, after: usize) -> Result<()> {
+fn report(verbose: bool, before: usize, after: usize, lang: Option<&str>) -> Result<()> {
     if verbose {
         let pct = tokens::savings_pct(before, after);
         eprintln!(
@@ -151,6 +182,17 @@ fn report(verbose: bool, before: usize, after: usize) -> Result<()> {
             before, after, pct
         );
     }
-    let _ = stats::record(before, after);
+    let _ = stats::record_with_lang(before, after, lang);
+    Ok(())
+}
+
+fn report_verbose_only(verbose: bool, before: usize, after: usize) -> Result<()> {
+    if verbose {
+        let pct = tokens::savings_pct(before, after);
+        eprintln!(
+            "\n[tersify] {} → {} tokens  ({:.0}% saved)",
+            before, after, pct
+        );
+    }
     Ok(())
 }

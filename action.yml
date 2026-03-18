@@ -1,0 +1,87 @@
+name: 'tersify'
+description: 'Compress code and context before sending to LLMs — saves 30–54% of tokens.'
+author: 'rustkit-ai'
+
+branding:
+  icon: 'zap'
+  color: 'orange'
+
+inputs:
+  path:
+    description: 'File or directory to compress (default: current directory)'
+    required: false
+    default: '.'
+  ast:
+    description: 'Extract function signatures only — stub all bodies with { /* ... */ }'
+    required: false
+    default: 'false'
+  strip-docs:
+    description: 'Also remove doc comments (///, //!, /** */, Python docstrings)'
+    required: false
+    default: 'false'
+  output-file:
+    description: 'Write compressed output to this file path instead of the step output'
+    required: false
+    default: ''
+  verbose:
+    description: 'Print token savings summary'
+    required: false
+    default: 'true'
+
+outputs:
+  compressed:
+    description: 'The compressed content (only set when output-file is not specified)'
+    value: ${{ steps.compress.outputs.compressed }}
+  tokens-before:
+    description: 'Token count before compression'
+    value: ${{ steps.compress.outputs.tokens_before }}
+  tokens-after:
+    description: 'Token count after compression'
+    value: ${{ steps.compress.outputs.tokens_after }}
+  savings-pct:
+    description: 'Percentage of tokens saved (e.g. "35%")'
+    value: ${{ steps.compress.outputs.savings_pct }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install tersify
+      shell: bash
+      run: |
+        if ! command -v tersify &>/dev/null; then
+          curl -fsSL https://raw.githubusercontent.com/rustkit-ai/tersify/main/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        fi
+
+    - name: Compress
+      id: compress
+      shell: bash
+      run: |
+        FLAGS=""
+        if [ "${{ inputs.ast }}" = "true" ];        then FLAGS="$FLAGS --ast"; fi
+        if [ "${{ inputs.strip-docs }}" = "true" ]; then FLAGS="$FLAGS --strip-docs"; fi
+        if [ "${{ inputs.verbose }}" = "true" ];    then FLAGS="$FLAGS --verbose"; fi
+
+        # Run tersify; capture stdout (compressed) and stderr (savings summary)
+        COMPRESSED=$(tersify $FLAGS "${{ inputs.path }}" 2>/tmp/_tersify_verbose)
+        SUMMARY=$(cat /tmp/_tersify_verbose || true)
+
+        # Parse token counts from summary line: "[tersify] 5439 → 3559 tokens  (35% saved)"
+        TOKENS_BEFORE=$(echo "$SUMMARY" | grep -oP '(?<=\[tersify\] )\d+' || echo "0")
+        TOKENS_AFTER=$(echo  "$SUMMARY" | grep -oP '(?<=→ )\d+(?= tokens)' || echo "0")
+        SAVINGS_PCT=$(echo   "$SUMMARY" | grep -oP '\d+(?=% saved)'        || echo "0")
+
+        if [ -n "${{ inputs.output-file }}" ]; then
+          echo "$COMPRESSED" > "${{ inputs.output-file }}"
+          echo "compressed=" >> "$GITHUB_OUTPUT"
+        else
+          {
+            echo "compressed<<TERSIFY_EOF"
+            echo "$COMPRESSED"
+            echo "TERSIFY_EOF"
+          } >> "$GITHUB_OUTPUT"
+        fi
+
+        echo "tokens_before=$TOKENS_BEFORE" >> "$GITHUB_OUTPUT"
+        echo "tokens_after=$TOKENS_AFTER"   >> "$GITHUB_OUTPUT"
+        echo "savings_pct=${SAVINGS_PCT}%"  >> "$GITHUB_OUTPUT"

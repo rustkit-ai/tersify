@@ -40,6 +40,17 @@ impl ContentType {
             Self::Text => "text",
         }
     }
+
+    /// Language label for stats tracking (e.g. `"rust"`, `"json"`, `"diff"`).
+    pub fn lang_str(&self) -> &'static str {
+        match self {
+            Self::Code(lang) => lang.as_str(),
+            Self::Json => "json",
+            Self::Logs => "logs",
+            Self::Diff => "diff",
+            Self::Text => "text",
+        }
+    }
 }
 
 impl std::fmt::Display for ContentType {
