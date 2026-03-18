@@ -1,6 +1,6 @@
 [package]
 name = "tersify"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 description = "Universal LLM context compressor — pipe anything, get token-optimized output"
 license = "MIT"

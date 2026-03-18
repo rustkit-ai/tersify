@@ -92,4 +92,7 @@ pub enum Command {
         #[arg(value_enum)]
         shell: Shell,
     },
+    /// Internal PostToolUse hook handler for Claude Code (reads hook JSON from stdin)
+    #[command(hide = true, name = "hook")]
+    HookRun,
 }

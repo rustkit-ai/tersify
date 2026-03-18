@@ -2,6 +2,7 @@ mod bench;
 mod cli;
 mod completions;
 mod config;
+mod hook;
 mod install;
 mod mcp;
 mod stats;
@@ -61,6 +62,7 @@ fn main() -> Result<()> {
         }
         Some(Command::Mcp) => mcp::run()?,
         Some(Command::Completions { shell }) => completions::run(shell)?,
+        Some(Command::HookRun) => hook::run()?,
         None => run_compress(cli, &cfg)?,
     }
 

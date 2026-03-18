@@ -1,22 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-const TERSIFY_MARKER: &str = "// tersify-hook";
-
-const CLAUDE_HOOK_BLOCK: &str = r#"// tersify-hook
-{
-  "PreToolUse": [
-    {
-      "matcher": "Read",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "tersify \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
-        }
-      ]
-    }
-  ]
-}"#;
+const TERSIFY_HOOK_COMMAND: &str = "tersify hook";
 
 const CURSOR_RULE_CONTENT: &str = r#"---
 description: Compress file context with tersify to reduce token usage
@@ -159,85 +144,142 @@ fn format_targets(targets: &[Target]) -> String {
 // ── Claude Code ──────────────────────────────────────────────────────────────
 
 fn install_claude() -> Result<()> {
-    let path = claude_hooks_path()?;
+    let settings_path = claude_settings_path()?;
 
-    if path.exists() {
-        let existing = std::fs::read_to_string(&path)?;
-        if existing.contains(TERSIFY_MARKER) {
-            println!("✓ tersify hook already installed at {}", path.display());
-            return Ok(());
-        }
+    // Remove the legacy hooks.json written by older tersify versions
+    cleanup_legacy_hooks_json();
+
+    // Load existing settings.json or start fresh
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .with_context(|| format!("failed to read {}", settings_path.display()))?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if hook_is_installed(&settings) {
         println!(
-            "⚠  Hooks file already exists at {}.\n   Add tersify manually or run `tersify uninstall` first.",
-            path.display()
+            "✓ tersify hook already installed in {}",
+            settings_path.display()
         );
         return Ok(());
     }
 
-    if let Some(parent) = path.parent() {
+    // Ensure hooks → PostToolUse array exists, then append our entry
+    {
+        let obj = settings
+            .as_object_mut()
+            .context("settings.json root is not an object")?;
+        let hooks = obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
+        let post_tool_use = hooks
+            .as_object_mut()
+            .context("settings.json hooks is not an object")?
+            .entry("PostToolUse")
+            .or_insert_with(|| serde_json::json!([]));
+        if let Some(arr) = post_tool_use.as_array_mut() {
+            arr.push(serde_json::json!({
+                "matcher": "Read",
+                "hooks": [{"type": "command", "command": TERSIFY_HOOK_COMMAND}]
+            }));
+        }
+    }
+
+    if let Some(parent) = settings_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
-    std::fs::write(&path, CLAUDE_HOOK_BLOCK)
-        .with_context(|| format!("failed to write {}", path.display()))?;
+    std::fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&settings).context("failed to serialise settings.json")?
+            + "\n",
+    )
+    .with_context(|| format!("failed to write {}", settings_path.display()))?;
 
-    println!("✓ Installed tersify hook at {}", path.display());
-    println!("  Files read by Claude will now be automatically compressed.");
+    println!(
+        "✓ Installed tersify PostToolUse hook in {}",
+        settings_path.display()
+    );
+    println!("  Files read by Claude Code will now be automatically compressed.");
     Ok(())
 }
 
 pub fn uninstall() -> Result<()> {
-    let path = claude_hooks_path()?;
+    let settings_path = claude_settings_path()?;
 
-    if !path.exists() {
-        println!("Nothing to uninstall — hooks file not found.");
+    cleanup_legacy_hooks_json();
+
+    if !settings_path.exists() {
+        println!("Nothing to uninstall — ~/.claude/settings.json not found.");
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(&path)?;
+    let content = std::fs::read_to_string(&settings_path)
+        .with_context(|| format!("failed to read {}", settings_path.display()))?;
+    let mut settings: serde_json::Value =
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}));
 
-    if !content.contains(TERSIFY_MARKER) {
-        println!("tersify hook not found in {}.", path.display());
+    if !hook_is_installed(&settings) {
+        println!("tersify hook not found in settings.json.");
         return Ok(());
     }
 
-    if content.trim() == CLAUDE_HOOK_BLOCK.trim() {
-        std::fs::remove_file(&path)?;
-        println!("✓ Removed tersify hook (deleted {})", path.display());
-    } else {
-        let cleaned = remove_hook_block(&content);
-        std::fs::write(&path, cleaned)?;
-        println!("✓ Removed tersify hook from {}", path.display());
+    // Remove all tersify PostToolUse entries
+    if let Some(arr) = settings
+        .pointer_mut("/hooks/PostToolUse")
+        .and_then(|v| v.as_array_mut())
+    {
+        arr.retain(|entry| !entry_is_tersify(entry));
     }
 
+    std::fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&settings).context("failed to serialise settings.json")?
+            + "\n",
+    )
+    .with_context(|| format!("failed to write {}", settings_path.display()))?;
+
+    println!("✓ Removed tersify hook from {}", settings_path.display());
     Ok(())
 }
 
-fn remove_hook_block(content: &str) -> String {
-    let mut out = Vec::new();
-    let mut in_block = false;
-
-    for line in content.lines() {
-        if line.contains(TERSIFY_MARKER) {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            if line.trim() == "}" {
-                in_block = false;
-            }
-            continue;
-        }
-        out.push(line);
-    }
-
-    out.join("\n")
+fn hook_is_installed(settings: &serde_json::Value) -> bool {
+    settings
+        .pointer("/hooks/PostToolUse")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().any(entry_is_tersify))
+        .unwrap_or(false)
 }
 
-fn claude_hooks_path() -> Result<PathBuf> {
+fn entry_is_tersify(entry: &serde_json::Value) -> bool {
+    entry
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .map(|hooks| {
+            hooks.iter().any(|h| {
+                h.get("command")
+                    .and_then(|c| c.as_str())
+                    .map(|c| c.contains(TERSIFY_HOOK_COMMAND))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// Remove the legacy `~/.claude/hooks.json` written by older tersify versions.
+fn cleanup_legacy_hooks_json() {
+    if let Ok(home) = std::env::var("HOME") {
+        let path = PathBuf::from(home).join(".claude").join("hooks.json");
+        if path.exists() && std::fs::remove_file(&path).is_ok() {
+            println!("  Removed legacy ~/.claude/hooks.json");
+        }
+    }
+}
+
+fn claude_settings_path() -> Result<PathBuf> {
     let home = std::env::var("HOME").context("$HOME not set")?;
-    Ok(PathBuf::from(home).join(".claude").join("hooks.json"))
+    Ok(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
 // ── Cursor IDE ───────────────────────────────────────────────────────────────
@@ -387,11 +429,11 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn claude_hooks_path_structure() {
-        let path = claude_hooks_path().unwrap();
+    fn claude_settings_path_structure() {
+        let path = claude_settings_path().unwrap();
         let s = path.to_string_lossy();
         assert!(s.contains(".claude"));
-        assert!(s.ends_with("hooks.json"));
+        assert!(s.ends_with("settings.json"));
     }
 
     #[test]
