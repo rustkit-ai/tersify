@@ -51,12 +51,11 @@ pub fn evict_old(max_age_days: u64) {
     let cutoff = std::time::SystemTime::now()
         - std::time::Duration::from_secs(max_age_days * 86_400);
     for entry in entries.flatten() {
-        if let Ok(meta) = entry.metadata() {
-            if let Ok(modified) = meta.modified() {
-                if modified < cutoff {
-                    let _ = std::fs::remove_file(entry.path());
-                }
-            }
+        if let Ok(meta) = entry.metadata()
+            && let Ok(modified) = meta.modified()
+            && modified < cutoff
+        {
+            let _ = std::fs::remove_file(entry.path());
         }
     }
 }
