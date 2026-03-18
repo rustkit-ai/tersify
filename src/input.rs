@@ -139,8 +139,7 @@ pub fn compress_file_with(
     opts: &CompressOptions,
 ) -> Result<(String, usize, usize)> {
     let content = std::fs::read_to_string(path)?;
-    let opts_key =
-        (opts.ast as u8) | ((opts.strip_docs as u8) << 1) | ((opts.smart as u8) << 2);
+    let opts_key = (opts.ast as u8) | ((opts.strip_docs as u8) << 1) | ((opts.smart as u8) << 2);
 
     if let Some(cached) = crate::cache::get(&content, opts_key) {
         let before = tokens::count(&content);
@@ -251,8 +250,9 @@ pub fn compress_directory_with(
         custom_patterns: opts.custom_patterns.clone(),
     };
 
-    let opts_key =
-        (file_opts.ast as u8) | ((file_opts.strip_docs as u8) << 1) | ((file_opts.smart as u8) << 2);
+    let opts_key = (file_opts.ast as u8)
+        | ((file_opts.strip_docs as u8) << 1)
+        | ((file_opts.smart as u8) << 2);
 
     let results: Vec<(String, usize, usize)> = paths
         .par_iter()

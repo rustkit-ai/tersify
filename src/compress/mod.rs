@@ -135,10 +135,7 @@ pub fn compress_with(
 ///
 /// Invalid patterns are silently ignored.
 fn apply_custom_patterns(text: &str, patterns: &[String]) -> String {
-    let regexes: Vec<Regex> = patterns
-        .iter()
-        .filter_map(|p| Regex::new(p).ok())
-        .collect();
+    let regexes: Vec<Regex> = patterns.iter().filter_map(|p| Regex::new(p).ok()).collect();
 
     if regexes.is_empty() {
         return text.to_string();

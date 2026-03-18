@@ -15,7 +15,9 @@ pub fn compress(input: &str, lang: &Language, strip_docs: bool) -> String {
         Language::Shell => strip_shell(input),
         Language::Yaml => strip_yaml(input),
         // Tsx shares TypeScript comment rules — map to TypeScript for stripping
-        Language::Tsx => collapse_blank_lines(&strip_cstyle(input, &Language::TypeScript, strip_docs)),
+        Language::Tsx => {
+            collapse_blank_lines(&strip_cstyle(input, &Language::TypeScript, strip_docs))
+        }
         _ => collapse_blank_lines(&strip_cstyle(input, lang, strip_docs)),
     }
 }
