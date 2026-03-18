@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tersify::error::{Result, TersifyError};
 
+/// LLM pricing used for cost-savings display (input $/M tokens, early 2026).
+const COST_MODELS: &[(&str, f64)] = &[
+    ("claude-sonnet-4.6", 3.00),
+    ("claude-opus-4.6", 15.00),
+    ("gpt-4o", 5.00),
+    ("gemini-2.5-pro", 1.25),
+];
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct LangStat {
     pub tokens_before: u64,
@@ -83,40 +91,86 @@ pub fn run() -> anyhow::Result<()> {
     let stats = load(&path).unwrap_or_default();
 
     if stats.total_invocations == 0 {
-        println!("No data yet. Run tersify on some files first.");
+        println!("No data yet — compress some files first:");
+        println!("  cat file.rs | tersify");
+        println!("  tersify src/");
         return Ok(());
     }
 
-    println!("tersify stats");
-    println!("─────────────────────────────────────────────────");
-    println!("  Invocations  : {}", stats.total_invocations);
-    println!("  Tokens in    : {}", stats.total_tokens_before);
-    println!("  Tokens out   : {}", stats.total_tokens_after);
-    println!(
-        "  Saved        : {} ({:.0}%)",
-        stats.tokens_saved(),
-        stats.savings_pct()
-    );
+    let saved = stats.tokens_saved();
+    let pct = stats.savings_pct();
 
+    println!();
+    println!("  tersify — token savings");
+    println!("  ─────────────────────────────────────────");
+    println!("  Compressions : {}", fmt_num(stats.total_invocations));
+    println!("  Tokens in    : {}", fmt_num(stats.total_tokens_before));
+    println!("  Tokens out   : {}", fmt_num(stats.total_tokens_after));
+    println!("  Tokens saved : {}  ({:.0}% smaller)", fmt_num(saved), pct);
+
+    // Dollar cost savings
+    println!();
+    println!("  Cost saved (what you didn't pay for):");
+    for (model, price_per_m) in COST_MODELS {
+        let saved_usd = saved as f64 / 1_000_000.0 * price_per_m;
+        println!(
+            "    {:<22} ${:.2}/M   → {}",
+            model,
+            price_per_m,
+            fmt_usd(saved_usd)
+        );
+    }
+
+    // By language
     if !stats.by_language.is_empty() {
         println!();
         println!("  By language:");
-        // Sort by tokens saved descending
         let mut langs: Vec<(&String, &LangStat)> = stats.by_language.iter().collect();
         langs.sort_by(|a, b| b.1.saved().cmp(&a.1.saved()));
         for (lang, ls) in langs {
+            let lang_usd = ls.saved() as f64 / 1_000_000.0 * COST_MODELS[0].1; // sonnet pricing
             println!(
-                "    {:<14} {:>8} → {:>8}  ({:.0}%)",
+                "    {:<16} {:>9} → {:>9}  ({:.0}%)   {}",
                 lang,
-                ls.tokens_before,
-                ls.tokens_after,
-                ls.pct()
+                fmt_num(ls.tokens_before),
+                fmt_num(ls.tokens_after),
+                ls.pct(),
+                fmt_usd(lang_usd),
             );
         }
+        println!();
+        println!("  * cost column uses claude-sonnet-4.6 ($3.00/M) as reference");
     }
 
+    println!();
     Ok(())
 }
+
+// ── Formatting helpers ────────────────────────────────────────────────────────
+
+fn fmt_num(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, ch) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out.chars().rev().collect()
+}
+
+fn fmt_usd(usd: f64) -> String {
+    if usd >= 1.0 {
+        format!("${:.2} saved", usd)
+    } else if usd >= 0.001 {
+        format!("${:.4} saved", usd)
+    } else {
+        format!("${:.6} saved", usd)
+    }
+}
+
+// ── Persistence ───────────────────────────────────────────────────────────────
 
 fn stats_path() -> Result<PathBuf> {
     let home = std::env::var("HOME").map_err(|_| TersifyError::Stats("$HOME not set".into()))?;

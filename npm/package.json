@@ -1,6 +1,6 @@
 {
   "name": "tersify",
-  "version": "0.3.1",
+  "version": "0.3.4",
   "description": "Token compression for LLM context windows — CLI wrapper",
   "keywords": ["llm", "tokens", "context", "compression", "ai", "claude"],
   "license": "MIT",

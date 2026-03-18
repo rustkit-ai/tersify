@@ -114,16 +114,28 @@ jobs:
           body: |
             ## Install
 
+            **Homebrew (macOS / Linux)**
+            ```bash
+            brew tap rustkit-ai/tap
+            brew install tersify
+            ```
+
             **One-liner (macOS / Linux)**
             ```bash
             curl -fsSL https://raw.githubusercontent.com/rustkit-ai/tersify/main/install.sh | bash
             ```
-            Downloads the binary, adds it to `~/.local/bin`, and hooks into all detected AI editors (Claude Code, Cursor, Windsurf) automatically.
+            Downloads the binary, adds it to `~/.local/bin`, and hooks into all detected AI editors automatically.
+
+            **npm**
+            ```bash
+            npm install -g tersify
+            tersify install --all
+            ```
 
             **Cargo**
             ```bash
             cargo install tersify
-            tersify install --all   # hook into all detected editors
+            tersify install --all
             ```
 
             **Direct download** — pick the archive for your platform below, verify the `.sha256`, put the binary on your `$PATH`, then run `tersify install --all`.
@@ -134,3 +146,70 @@ jobs:
             artifacts/**/*.zip
             artifacts/**/*.sha256
             artifacts/install.sh
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    # Only run if the homebrew-tap repo exists (set secret HOMEBREW_TAP_TOKEN)
+    if: ${{ vars.HOMEBREW_TAP_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute source tarball SHA256
+        id: sha
+        run: |
+          TAG=${{ github.ref_name }}
+          URL="https://github.com/rustkit-ai/tersify/archive/refs/tags/${TAG}.tar.gz"
+          SHA=$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update formula in homebrew-tap
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          script: |
+            const { sha256, url, version } = ${{ toJson(steps.sha.outputs) }};
+            const formula = `class Tersify < Formula
+              desc "Universal LLM context compressor — pipe anything, get token-optimized output"
+              homepage "https://github.com/rustkit-ai/tersify"
+              url "${url}"
+              sha256 "${sha256}"
+              license "MIT"
+
+              depends_on "rust" => :build
+
+              def install
+                system "cargo", "install", *std_cargo_args
+              end
+
+              def post_install
+                system "\#{bin}/tersify", "install", "--all"
+              rescue StandardError
+                nil
+              end
+
+              test do
+                assert_match version.to_s, shell_output("\#{bin}/tersify --version")
+                (testpath/"test.rs").write("// comment\\nfn main() {}\\n")
+                output = shell_output("\#{bin}/tersify \#{testpath}/test.rs")
+                refute_match "// comment", output
+              end
+            end
+            `;
+            const owner = 'rustkit-ai';
+            const repo = 'homebrew-tap';
+            const path = 'Formula/tersify.rb';
+            let sha_file;
+            try {
+              const { data } = await github.rest.repos.getContent({ owner, repo, path });
+              sha_file = data.sha;
+            } catch {}
+            await github.rest.repos.createOrUpdateFileContents({
+              owner, repo, path,
+              message: `tersify ${version}`,
+              content: Buffer.from(formula).toString('base64'),
+              sha: sha_file,
+            });

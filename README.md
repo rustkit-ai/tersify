@@ -1,63 +1,62 @@
 <div align="center">
 
-```
- ████████╗███████╗██████╗ ███████╗██╗███████╗██╗   ██╗
- ╚══██╔══╝██╔════╝██╔══██╗██╔════╝██║██╔════╝╚██╗ ██╔╝
-    ██║   █████╗  ██████╔╝███████╗██║█████╗   ╚████╔╝
-    ██║   ██╔══╝  ██╔══██╗╚════██║██║██╔══╝    ╚██╔╝
-    ██║   ███████╗██║  ██║███████║██║██║        ██║
-    ╚═╝   ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝╚═╝        ╚═╝
-```
+# tersify
 
-**Token compression for LLM context windows**
+**Strip the noise from any file before it hits your LLM context window.**
 
 [![Crates.io](https://img.shields.io/crates/v/tersify)](https://crates.io/crates/tersify)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/tersify)](https://www.npmjs.com/package/tersify)
 [![CI](https://img.shields.io/github/actions/workflow/status/rustkit-ai/tersify/ci.yml?label=tests)](https://github.com/rustkit-ai/tersify/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 </div>
 
 ---
 
-Every file you send to an LLM is **30–50% noise**: comments, blank lines, `null` JSON fields, duplicate log lines. tersify strips all of it before the token counter starts.
+Every file you send to Claude or GPT is **30–50% noise**: comments, blank lines, `null` JSON fields, repeated log lines. tersify removes all of it — automatically, in milliseconds, with zero configuration.
 
 ```
 $ tersify src/ --verbose
-[tersify] 5 439 → 3 559 tokens  (35% saved, 1 880 tokens freed)
+[tersify] 5,439 → 3,559 tokens  (35% saved)
 ```
 
-**35% fewer tokens** in standard mode. **54% fewer** with `--ast` (signatures only).
-No network calls. No configuration. Deterministic output.
+Works as a **silent automatic hook** in Claude Code (fires on every file read), and as an **AI-guided rule** in Cursor and Windsurf.
 
 ---
 
 ## Install
 
-**One-liner — installs the binary and hooks into all your AI editors automatically:**
+**Homebrew**
+```bash
+brew tap rustkit-ai/tap
+brew install tersify
+```
 
+**One-liner** (macOS / Linux)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rustkit-ai/tersify/main/install.sh | bash
 ```
 
-**cargo**
-
+**npm**
 ```bash
-cargo install tersify
-tersify install --all   # hook into Claude Code, Cursor, Windsurf (auto-detects)
+npm install -g tersify
+tersify install --all
 ```
 
-**Pre-built binaries** — [github.com/rustkit-ai/tersify/releases](https://github.com/rustkit-ai/tersify/releases)
+**Cargo**
+```bash
+cargo install tersify
+tersify install --all
+```
+
+All methods end with `tersify install --all` — auto-detects Claude Code, Cursor, and Windsurf and hooks into all of them.
 
 ---
 
-## How it works
-
-### Standard mode — remove the noise
-
-tersify applies language-aware rules to strip everything that carries no information for an LLM:
+## What it does
 
 ```rust
-// Before — 384 tokens
+// BEFORE — 384 tokens
 // Authentication middleware for the REST API.
 // Validates JWT tokens issued by our identity provider.
 use anyhow::{Context, Result};
@@ -71,32 +70,26 @@ pub struct Claims {
 }
 
 // Validates a bearer token and returns the embedded claims.
-// Returns an error if the token is expired, malformed, or signed with the wrong key.
+// Returns an error if the token is expired or malformed.
 pub fn validate_token(token: &str, secret: &[u8]) -> Result<Claims> {
     // Decode the header first to get the algorithm
     let header = decode_header(token)
         .context("failed to decode JWT header")?;
-
-    // Build a validation config matching the issuer requirements
+    // Build a validation config matching issuer requirements
     let mut validation = Validation::new(header.alg);
     validation.validate_exp = true; // always enforce expiry
-
     let key = DecodingKey::from_secret(secret);
-
     let data = decode::<Claims>(token, &key, &validation)
         .context("JWT validation failed")?;
-
-    // Extra check: ensure the subject is non-empty
     if data.claims.sub.is_empty() {
         anyhow::bail!("token subject is empty");
     }
-
     Ok(data.claims)
 }
 ```
 
 ```rust
-// After — 228 tokens  (41% saved)
+// AFTER — 228 tokens  ↓ 41% smaller
 use anyhow::{Context, Result};
 
 /// Claims embedded in the JWT token.
@@ -122,26 +115,58 @@ pub fn validate_token(token: &str, secret: &[u8]) -> Result<Claims> {
 }
 ```
 
-### AST mode — signatures only
+All logic is preserved. Only noise is removed.
 
-Pass `--ast` to go further: powered by [tree-sitter](https://tree-sitter.github.io/), tersify parses the full syntax tree and replaces every function body with a stub. The result is a precise API surface.
+---
+
+## Automatic mode — Claude Code
+
+After `tersify install`, every file Claude reads is silently compressed before it enters the context window. Nothing changes in your workflow.
+
+```bash
+tersify install          # hook into Claude Code
+tersify stats            # see what you've saved
+```
+
+```
+  tersify — token savings
+  ─────────────────────────────────────────
+  Compressions : 1,247
+  Tokens in    : 4,821,334
+  Tokens out   : 3,094,452
+  Tokens saved : 1,726,882  (36% smaller)
+
+  Cost saved (what you didn't pay for):
+    claude-sonnet-4.6      $3.00/M   → $5.18 saved
+    claude-opus-4.6        $15.00/M  → $25.90 saved
+    gpt-4o                 $5.00/M   → $8.63 saved
+    gemini-2.5-pro         $1.25/M   → $2.16 saved
+
+  By language:
+    rust             2,841,012 → 1,738,014  (39%)   $3.31 saved
+    typescript         498,234 →   348,764  (30%)   $0.45 saved
+    python             391,018 →   215,512  (45%)   $0.53 saved
+    json               284,912 →   169,004  (41%)   $0.35 saved
+```
+
+---
+
+## AST mode — signatures only
+
+Pass `--ast` to go further: tersify uses [tree-sitter](https://tree-sitter.github.io/) to parse the full syntax tree and stub every function body. The output is a precise API surface.
 
 ```rust
-// tersify src/auth.rs --ast  →  209 tokens  (46% saved)
-use anyhow::{Context, Result};
+// tersify --ast src/auth.rs  →  209 tokens  ↓ 46% vs standard, ↓ 54% total
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Claims {
-    pub sub: String,
-    pub exp: usize,
-    pub roles: Vec<String>,
-}
+pub struct Claims { pub sub: String, pub exp: usize, pub roles: Vec<String> }
 
 pub fn validate_token(token: &str, secret: &[u8]) -> Result<Claims> { /* ... */ }
 pub fn bearer_header(token: &str) -> String { /* ... */ }
+pub fn refresh_token(claims: &Claims, secret: &[u8]) -> Result<String> { /* ... */ }
 ```
 
-Use AST mode when you want Claude to understand a project's structure without reading every implementation.
+Use `--ast` when you want Claude to understand a project's shape without reading every implementation.
 
 ---
 
@@ -149,49 +174,46 @@ Use AST mode when you want Claude to understand a project's structure without re
 
 ```bash
 tersify src/main.rs            # single file → stdout
-tersify src/                   # entire directory
-cat file.rs | tersify          # stdin
+tersify src/                   # entire directory (parallel)
+cat file.rs | tersify          # pipe stdin
+git diff | tersify             # compress diffs
+
 tersify src/ --verbose         # show token savings
 tersify src/ --ast             # signatures only
 tersify src/ --strip-docs      # also remove doc comments (///, /** */)
-tersify token-cost src/        # estimate API cost
+tersify src/ --budget 4000     # hard limit: truncate to 4 000 tokens
+
+tersify token-cost src/        # estimate LLM API cost before vs after
+tersify bench                  # benchmark all content types
+tersify stats                  # cumulative savings since install
 ```
 
 ---
 
-## Integrate with your AI editor
+## Editors
 
-### All editors at once (recommended)
-
-```bash
-tersify install --all
-```
-
-Auto-detects Claude Code, Cursor, and Windsurf on your machine and hooks into all of them in one go.
+| Editor | Integration | How it works |
+|---|---|---|
+| **Claude Code** | Automatic hook | Compresses every file read silently via PostToolUse hook |
+| **Cursor** | AI-guided rule | Cursor's AI uses tersify before reading files into context |
+| **Windsurf** | AI-guided rule | Windsurf's AI uses tersify before reading files into context |
 
 ```bash
+tersify install                # Claude Code
+tersify install --cursor       # Cursor
+tersify install --windsurf     # Windsurf
+tersify install --all          # all detected editors at once
+
 tersify uninstall --all        # remove all hooks
 ```
 
-### Individual editors
-
-```bash
-tersify install                # Claude Code only
-tersify install --cursor       # Cursor only
-tersify install --windsurf     # Windsurf only
-```
-
-### Claude Code — how it works
-
-tersify registers a `PreToolUse` hook in `~/.claude/hooks.json`. Every file Claude reads is automatically compressed before it enters the context window — no workflow changes required.
-
 ---
 
-## Benchmark
+## Benchmarks
 
-Real numbers — run `tersify bench` to reproduce locally.
+Run `tersify bench` to reproduce locally.
 
-### Standard mode
+**Standard mode**
 
 | Content type | Before | After | Saved |
 |---|---:|---:|---:|
@@ -201,15 +223,13 @@ Real numbers — run `tersify bench` to reproduce locally.
 | Ruby | 447 | 285 | **36%** |
 | Java | 608 | 435 | **28%** |
 | C / C++ | 579 | 342 | **41%** |
-| Swift | 699 | 597 | **15%** |
 | Kotlin | 604 | 336 | **44%** |
 | JSON | 181 | 103 | **43%** |
 | Git diff | 275 | 213 | **23%** |
 | Logs | 340 | 173 | **49%** |
-| Plain text | 270 | 189 | **30%** |
-| **Total** | **5 439** | **3 559** | **35%** |
+| **Total** | **5,439** | **3,559** | **35%** |
 
-### AST mode (`--ast`)
+**AST mode (`--ast`)**
 
 | Language | Before | After | Saved |
 |---|---:|---:|---:|
@@ -219,22 +239,7 @@ Real numbers — run `tersify bench` to reproduce locally.
 | TypeScript | 528 | 265 | **50%** |
 | C / C++ | 579 | 304 | **47%** |
 | Rust | 384 | 209 | **46%** |
-| **Total** | **3 070** | **1 417** | **54%** |
-
----
-
-## What gets removed
-
-| Content | What's stripped |
-|---|---|
-| **Code** | Inline and block comments, consecutive blank lines |
-| **Code + `--strip-docs`** | Also removes `///`, `//!`, `/** */`, Python docstrings |
-| **JSON** | `null` fields, empty `[]` and `{}` |
-| **Logs** | Repeated identical lines → `[×47]` on the first |
-| **Diffs** | Context lines — keeps only `+` / `-` and headers |
-| **AST** | Function bodies → `{ /* ... */ }` (exact parse tree, tree-sitter) |
-
-Doc comments (`///`, `//!`, `/** */`) are preserved by default — pass `--strip-docs` to remove them too.
+| **Total** | **3,070** | **1,417** | **54%** |
 
 ---
 
@@ -244,8 +249,7 @@ Doc comments (`///`, `//!`, `/** */`) are preserved by default — pass `--strip
 |---|:---:|:---:|---|
 | Rust | ✓ | ✓ | `.rs` |
 | Python | ✓ | ✓ | `.py` |
-| TypeScript | ✓ | ✓ | `.ts` |
-| TSX | ✓ | ✓ | `.tsx` |
+| TypeScript / TSX | ✓ | ✓ | `.ts` `.tsx` |
 | JavaScript | ✓ | ✓ | `.js` `.jsx` `.mjs` |
 | Go | ✓ | ✓ | `.go` |
 | Java | ✓ | ✓ | `.java` |
@@ -255,47 +259,45 @@ Doc comments (`///`, `//!`, `/** */`) are preserved by default — pass `--strip
 | PHP | ✓ | ✓ | `.php` |
 | Swift | ✓ | — | `.swift` |
 | Kotlin | ✓ | — | `.kt` |
-| JSON | ✓ | — | `.json` |
+| JSON / JSONC | ✓ | — | `.json` |
 | Logs | ✓ | — | `.log` |
 | Git diffs | ✓ | — | `.diff` `.patch` |
 
 ---
 
-## Cost estimator
+## What gets removed
 
-```bash
-tersify token-cost src/
-tersify token-cost src/ --model claude
-```
-
-```
-  5 439 → 3 559 tokens  (35% saved, 1 880 tokens freed)
-
-  Model                   Provider      $/M tokens        Raw cost    Compressed    Saved/call
-  ────────────────────────────────────────────────────────────────────────────────────────────
-  claude-opus-4.6         Anthropic         $15.00         $0.0816      $0.0534      -$0.0282
-  claude-sonnet-4.6       Anthropic          $3.00         $0.0163      $0.0107      -$0.0056
-  claude-haiku-4.5        Anthropic          $0.80         $0.0044      $0.0028      -$0.0014
-  gpt-4o                  OpenAI             $5.00         $0.0272      $0.0178      -$0.0094
-  gemini-2.5-pro          Google             $1.25         $0.0068      $0.0044      -$0.0023
-  deepseek-v3             DeepSeek           $0.27         $0.0015      $0.0010      -$0.0005
-  ────────────────────────────────────────────────────────────────────────────────────────────
-
-  At 100 calls/day with claude-opus-4.6: saves $2.82/day → $84.60/month
-```
+| Content | Stripped |
+|---|---|
+| **Code** | Comments, consecutive blank lines |
+| **+ `--strip-docs`** | Also `///`, `//!`, `/** */`, Python docstrings |
+| **JSON** | `null` fields, empty `[]` and `{}` |
+| **Logs** | Repeated lines → first occurrence + `[×N]` count |
+| **Diffs** | Context lines — keeps only `+` / `-` and file headers |
+| **`--ast`** | Function bodies → `{ /* ... */ }` (full syntax tree parse) |
 
 ---
 
-## MCP server
-
-tersify ships a built-in [MCP](https://modelcontextprotocol.io/) server for agent pipelines.
+## Token cost estimator
 
 ```bash
-# Add to Claude Code
-claude mcp add tersify -- tersify mcp
+tersify token-cost src/
+tersify token-cost src/ --model claude-sonnet
 ```
 
-Three tools exposed: `compress`, `count_tokens`, `estimate_cost`.
+```
+  5,439 → 3,559 tokens  (35% saved, 1,880 tokens freed)
+
+  Model                  Provider     $/M tokens     Raw cost   Compressed   Saved/call
+  ─────────────────────────────────────────────────────────────────────────────────────
+  claude-opus-4.6        Anthropic       $15.00       $0.0816      $0.0534      -$0.0282
+  claude-sonnet-4.6      Anthropic        $3.00       $0.0163      $0.0107      -$0.0056
+  gpt-4o                 OpenAI           $5.00       $0.0272      $0.0178      -$0.0094
+  gemini-2.5-pro         Google           $1.25       $0.0068      $0.0044      -$0.0023
+  ─────────────────────────────────────────────────────────────────────────────────────
+
+  At 100 calls/day with claude-opus-4.6: saves $2.82/day → $84.60/month
+```
 
 ---
 
@@ -307,42 +309,56 @@ tersify = "0.3"
 ```
 
 ```rust
-use tersify::{compress, detect};
+use tersify::{compress::{compress_with, CompressOptions}, detect};
 use std::path::Path;
 
-// Auto-detect and compress
 let src = std::fs::read_to_string("src/main.rs")?;
 let ct  = detect::detect_for_path(Path::new("src/main.rs"), &src);
-let out = compress::compress(&src, &ct, None)?;
 
-// AST mode
-use tersify::compress::{compress_with, CompressOptions};
-let out = compress_with(&src, &ct, &CompressOptions { ast: true, ..Default::default() })?;
+// Standard compression
+let out = compress_with(&src, &ct, &CompressOptions::default())?;
+
+// AST mode — signatures only
+let out = compress_with(&src, &ct, &CompressOptions {
+    ast: true,
+    ..Default::default()
+})?;
 ```
+
+---
+
+## MCP server
+
+tersify ships a built-in [MCP](https://modelcontextprotocol.io/) server for agent pipelines.
+
+```bash
+claude mcp add tersify -- tersify mcp
+```
+
+Tools: `compress`, `count_tokens`, `estimate_cost`.
 
 ---
 
 ## CLI reference
 
 ```
-tersify [FILES|DIRS]           Compress to stdout
-  --ast                        Signatures only (tree-sitter)
-  --strip-docs                 Also remove doc comments (///, //!, /** */)
-  --type <lang>                Force content type
-  --verbose                    Show token savings
+tersify [FILES|DIRS]           Compress to stdout (stdin if omitted)
+  -t, --type <lang>            Force content type
+  -b, --budget <N>             Hard token limit — truncate at N tokens
+  -v, --verbose                Print token savings to stderr
+  -a, --ast                    Signatures only (tree-sitter)
+  -s, --smart                  Semantic deduplication (MinHash)
+      --strip-docs             Remove doc comments too (///, /** */)
 
+tersify install [--cursor|--windsurf|--all]    Hook into AI editors
+tersify uninstall [--cursor|--windsurf|--all]  Remove hooks
+tersify stats                  Show cumulative token savings
+tersify stats-reset            Reset stats
 tersify bench                  Benchmark all content types
 tersify token-cost [FILES]     Estimate LLM API cost
-  --model <filter>             Filter models by name
-
-tersify mcp                    Start MCP server
-
-tersify install                Hook into Claude Code
-tersify install --cursor       Hook into Cursor
-tersify install --windsurf     Hook into Windsurf
-tersify uninstall              Remove the hook
-
-tersify completions <shell>    Generate shell completions
+  -m, --model <filter>         Filter models by name
+tersify mcp                    Start MCP server (stdio)
+tersify completions <shell>    Shell completions (bash|zsh|fish)
 ```
 
 `--type` values: `rust` `python` `javascript` `typescript` `tsx` `go` `ruby` `java` `c` `cpp` `csharp` `php` `swift` `kotlin` `json` `logs` `diff` `text`
@@ -362,8 +378,6 @@ cargo run -- bench   # live benchmark
 
 <div align="center">
 
-MIT — made by [rustkit-ai](https://github.com/rustkit-ai)
-
-[Contributing](CONTRIBUTING.md)
+MIT — [rustkit-ai](https://github.com/rustkit-ai) · [Contributing](CONTRIBUTING.md)
 
 </div>

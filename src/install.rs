@@ -4,32 +4,50 @@ use std::path::PathBuf;
 const TERSIFY_HOOK_COMMAND: &str = "tersify hook";
 
 const CURSOR_RULE_CONTENT: &str = r#"---
-description: Compress file context with tersify to reduce token usage
+description: Use tersify to compress file content before adding to context — saves 30-78% of tokens
 alwaysApply: true
 ---
 
-When including file contents in your context window, prefer running them
-through `tersify` first to strip noise and save tokens:
+# tersify — automatic token compression
+
+Before reading any file into your context, run it through `tersify` first.
+This strips comments, blank lines, null JSON fields, and duplicate log lines
+without losing any information — saving 30–78% of tokens.
+
+## Usage
 
 ```bash
-# Single file
+# Compress a single file (replaces comments/blanks, keeps all logic)
 tersify src/main.rs
 
-# Entire directory (skips target/, node_modules/, etc.)
+# Compress an entire directory in parallel
 tersify src/
 
-# Pipe from stdin
+# Pipe output from any command
 cat large_file.rs | tersify
+git diff | tersify
 
-# Show token savings
-cat large_file.rs | tersify --verbose
+# Signatures only — stub function bodies (saves 50-80%)
+tersify --ast src/lib.rs
+
+# Show savings
+tersify --verbose src/main.rs
 ```
 
-tersify removes comments, collapses blank lines, strips null JSON fields,
-and deduplicates repeated log lines — saving 30–78% of tokens with no loss
-of information.
+## When to use
+- ALWAYS run `tersify` before reading source files into context
+- Run `tersify src/` when exploring an unfamiliar codebase
+- Run `git diff | tersify` before code review to save context space
+- Run `tersify --ast` when you only need the API surface, not implementations
 
-Install: `cargo install tersify` or download from https://github.com/rustkit-ai/tersify/releases
+## What tersify removes
+- Single-line comments (`//`, `#`, `--`)
+- Block comments (`/* */`, `""" """`)
+- Blank lines and trailing whitespace
+- null/empty fields in JSON
+- Duplicate log lines (keeps first + count)
+
+tersify is installed at: $(which tersify 2>/dev/null || echo "cargo install tersify")
 "#;
 
 /// Target IDE for install/uninstall.
@@ -198,10 +216,11 @@ fn install_claude() -> Result<()> {
     .with_context(|| format!("failed to write {}", settings_path.display()))?;
 
     println!(
-        "✓ Installed tersify PostToolUse hook in {}",
+        "✓ Claude Code — automatic hook installed ({})",
         settings_path.display()
     );
-    println!("  Files read by Claude Code will now be automatically compressed.");
+    println!("  Every file Claude reads is now silently compressed.");
+    println!("  Nothing to do — it just works. Track savings: tersify stats");
     Ok(())
 }
 
@@ -288,7 +307,10 @@ fn install_cursor() -> Result<()> {
     let rule_path = cursor_rule_path()?;
 
     if rule_path.exists() {
-        println!("✓ Cursor rule already installed at {}", rule_path.display());
+        println!(
+            "✓ Cursor — rule already installed at {}",
+            rule_path.display()
+        );
         return Ok(());
     }
 
@@ -301,11 +323,10 @@ fn install_cursor() -> Result<()> {
     std::fs::write(&rule_path, CURSOR_RULE_CONTENT)
         .with_context(|| format!("failed to write {}", rule_path.display()))?;
 
-    println!("✓ Installed tersify rule at {}", rule_path.display());
-    println!("  Cursor will now suggest using tersify for context compression.");
-    println!();
-    println!("  Tip: add a shell alias for quick manual use:");
-    println!("    echo \"alias tcat='tersify'\" >> ~/.zshrc");
+    println!("✓ Cursor — AI rule installed ({})", rule_path.display());
+    println!("  Cursor's AI will now always use tersify before reading files.");
+    println!("  Note: Cursor uses AI-guided rules (not automatic hooks like Claude Code).");
+    println!("  The AI knows to run tersify — it happens transparently.");
     Ok(())
 }
 
@@ -338,20 +359,35 @@ const WINDSURF_RULE_CONTENT: &str = r#"---
 trigger: always_on
 ---
 
-When including file contents in your context window, prefer running them
-through `tersify` first to reduce token usage:
+# tersify — automatic token compression
+
+Before reading any file into your context, run it through `tersify` first.
+This strips comments, blank lines, null JSON fields, and duplicate log lines
+without losing any information — saving 30–78% of tokens.
+
+## Usage
 
 ```bash
-tersify src/main.rs          # single file
-tersify src/                  # entire directory
-cat large_file.rs | tersify   # pipe from stdin
-cat file.rs | tersify --ast   # signatures only
+tersify src/main.rs          # compress a single file
+tersify src/                 # compress entire directory in parallel
+cat large_file.rs | tersify  # pipe any command output
+git diff | tersify           # compress diffs before review
+tersify --ast src/lib.rs     # signatures only (50-80% savings)
+tersify --verbose src/       # show token counts
 ```
 
-tersify removes comments, blank lines, null JSON fields, and deduplicates
-repeated log lines — saving 30–78% of tokens with no information loss.
+## Always do this
+- Run `tersify` before reading source files — every read saves tokens
+- Run `tersify src/` when exploring a codebase
+- Run `tersify --ast` when you only need function signatures
 
-Install: `cargo install tersify` or download from https://github.com/rustkit-ai/tersify/releases
+## What tersify removes
+- Comments (single-line and block) in all supported languages
+- Blank lines and trailing whitespace
+- null/empty fields in JSON
+- Duplicate log lines (keeps unique lines + count)
+
+tersify installed: $(which tersify 2>/dev/null || echo "cargo install tersify")
 "#;
 
 fn install_windsurf() -> Result<()> {
@@ -359,7 +395,7 @@ fn install_windsurf() -> Result<()> {
 
     if rule_path.exists() {
         println!(
-            "✓ Windsurf rule already installed at {}",
+            "✓ Windsurf — rule already installed at {}",
             rule_path.display()
         );
         return Ok(());
@@ -373,8 +409,10 @@ fn install_windsurf() -> Result<()> {
     std::fs::write(&rule_path, WINDSURF_RULE_CONTENT)
         .with_context(|| format!("failed to write {}", rule_path.display()))?;
 
-    println!("✓ Installed tersify rule at {}", rule_path.display());
-    println!("  Windsurf will now suggest using tersify for context compression.");
+    println!("✓ Windsurf — AI rule installed ({})", rule_path.display());
+    println!("  Windsurf's AI will now always use tersify before reading files.");
+    println!("  Note: Windsurf uses AI-guided rules (not automatic hooks like Claude Code).");
+    println!("  The AI knows to run tersify — it happens transparently.");
     Ok(())
 }
 
