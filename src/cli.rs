@@ -50,25 +50,31 @@ pub enum Command {
     /// Install tersify hooks into your AI coding environment
     Install {
         /// Install for Cursor IDE (~/.cursor/rules/tersify.mdc)
-        #[arg(long, conflicts_with_all = ["windsurf", "all"])]
+        #[arg(long, conflicts_with_all = ["windsurf", "copilot", "all"])]
         cursor: bool,
         /// Install for Windsurf IDE (~/.windsurf/rules/tersify.md)
-        #[arg(long, conflicts_with_all = ["cursor", "all"])]
+        #[arg(long, conflicts_with_all = ["cursor", "copilot", "all"])]
         windsurf: bool,
+        /// Install for GitHub Copilot (.github/copilot-instructions.md in current directory)
+        #[arg(long, conflicts_with_all = ["cursor", "windsurf", "all"])]
+        copilot: bool,
         /// Auto-detect and install for all present editors (Claude Code + Cursor + Windsurf)
-        #[arg(long, conflicts_with_all = ["cursor", "windsurf"])]
+        #[arg(long, conflicts_with_all = ["cursor", "windsurf", "copilot"])]
         all: bool,
     },
     /// Remove tersify hooks
     Uninstall {
         /// Remove Cursor IDE rule
-        #[arg(long, conflicts_with_all = ["windsurf", "all"])]
+        #[arg(long, conflicts_with_all = ["windsurf", "copilot", "all"])]
         cursor: bool,
         /// Remove Windsurf IDE rule
-        #[arg(long, conflicts_with_all = ["cursor", "all"])]
+        #[arg(long, conflicts_with_all = ["cursor", "copilot", "all"])]
         windsurf: bool,
+        /// Remove GitHub Copilot instructions
+        #[arg(long, conflicts_with_all = ["cursor", "windsurf", "all"])]
+        copilot: bool,
         /// Remove hooks from all detected editors
-        #[arg(long, conflicts_with_all = ["cursor", "windsurf"])]
+        #[arg(long, conflicts_with_all = ["cursor", "windsurf", "copilot"])]
         all: bool,
     },
     /// Show token savings statistics

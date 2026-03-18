@@ -50,12 +50,45 @@ tersify --verbose src/main.rs
 tersify is installed at: $(which tersify 2>/dev/null || echo "cargo install tersify")
 "#;
 
+const COPILOT_INSTRUCTIONS_CONTENT: &str = r#"## tersify — automatic token compression
+
+Before reading any source file into context, run it through `tersify` first.
+tersify strips comments, blank lines, null JSON fields, and duplicate log lines
+without losing any information — saving 30–78% of tokens.
+
+### Usage
+
+```bash
+tersify src/main.rs          # compress a single file
+tersify src/                 # compress entire directory in parallel
+cat file.rs | tersify        # pipe any output
+git diff | tersify           # compress diffs
+tersify --ast src/lib.rs     # signatures only (50–80% savings)
+tersify --verbose src/       # show token counts
+```
+
+### When to use
+
+- Always run `tersify` before reading source files — every read saves tokens
+- Run `tersify src/` when exploring an unfamiliar codebase
+- Run `git diff | tersify` before code review
+- Run `tersify --ast` when you only need API signatures, not implementations
+
+### What tersify removes
+
+- Single-line comments (`//`, `#`, `--`) and block comments (`/* */`, `""" """`)
+- Consecutive blank lines and trailing whitespace
+- `null` / empty fields in JSON
+- Duplicate log lines (keeps first occurrence + `[×N]` count)
+"#;
+
 /// Target IDE for install/uninstall.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
     ClaudeCode,
     Cursor,
     Windsurf,
+    Copilot,
 }
 
 /// Install tersify hooks for the given target.
@@ -64,6 +97,7 @@ pub fn run_with_opts(target: Target) -> Result<()> {
         Target::ClaudeCode => install_claude(),
         Target::Cursor => install_cursor(),
         Target::Windsurf => install_windsurf(),
+        Target::Copilot => install_copilot(),
     }
 }
 
@@ -73,6 +107,7 @@ pub fn uninstall_with_opts(target: Target) -> Result<()> {
         Target::ClaudeCode => uninstall(),
         Target::Cursor => uninstall_cursor(),
         Target::Windsurf => uninstall_windsurf(),
+        Target::Copilot => uninstall_copilot(),
     }
 }
 
@@ -154,6 +189,7 @@ fn format_targets(targets: &[Target]) -> String {
             Target::ClaudeCode => "Claude Code",
             Target::Cursor => "Cursor",
             Target::Windsurf => "Windsurf",
+            Target::Copilot => "GitHub Copilot",
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -184,20 +220,44 @@ fn install_claude() -> Result<()> {
         return Ok(());
     }
 
-    // Ensure hooks → PostToolUse array exists, then append our entry
+    // Ensure hooks → PostToolUse and PreToolUse arrays exist, then append our entries
     {
         let obj = settings
             .as_object_mut()
             .context("settings.json root is not an object")?;
-        let hooks = obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
-        let post_tool_use = hooks
+        let hooks = obj
+            .entry("hooks")
+            .or_insert_with(|| serde_json::json!({}))
             .as_object_mut()
-            .context("settings.json hooks is not an object")?
+            .context("settings.json hooks is not an object")?;
+
+        // PostToolUse: Read (compress file content after read)
+        let post = hooks
             .entry("PostToolUse")
             .or_insert_with(|| serde_json::json!([]));
-        if let Some(arr) = post_tool_use.as_array_mut() {
+        if let Some(arr) = post.as_array_mut() {
             arr.push(serde_json::json!({
                 "matcher": "Read",
+                "hooks": [{"type": "command", "command": TERSIFY_HOOK_COMMAND}]
+            }));
+            // PostToolUse: Bash (compress bash command output)
+            arr.push(serde_json::json!({
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": TERSIFY_HOOK_COMMAND}]
+            }));
+        }
+
+        // PreToolUse: Write/Edit (inject compressed current file as context before editing)
+        let pre = hooks
+            .entry("PreToolUse")
+            .or_insert_with(|| serde_json::json!([]));
+        if let Some(arr) = pre.as_array_mut() {
+            arr.push(serde_json::json!({
+                "matcher": "Write",
+                "hooks": [{"type": "command", "command": TERSIFY_HOOK_COMMAND}]
+            }));
+            arr.push(serde_json::json!({
+                "matcher": "Edit",
                 "hooks": [{"type": "command", "command": TERSIFY_HOOK_COMMAND}]
             }));
         }
@@ -244,12 +304,12 @@ pub fn uninstall() -> Result<()> {
         return Ok(());
     }
 
-    // Remove all tersify PostToolUse entries
-    if let Some(arr) = settings
-        .pointer_mut("/hooks/PostToolUse")
-        .and_then(|v| v.as_array_mut())
-    {
-        arr.retain(|entry| !entry_is_tersify(entry));
+    // Remove all tersify PostToolUse and PreToolUse entries
+    for event in &["PostToolUse", "PreToolUse"] {
+        let ptr = format!("/hooks/{event}");
+        if let Some(arr) = settings.pointer_mut(&ptr).and_then(|v| v.as_array_mut()) {
+            arr.retain(|entry| !entry_is_tersify(entry));
+        }
     }
 
     std::fs::write(
@@ -437,6 +497,100 @@ fn windsurf_rule_path() -> Result<PathBuf> {
         .join(".windsurf")
         .join("rules")
         .join("tersify.md"))
+}
+
+// ── GitHub Copilot ────────────────────────────────────────────────────────────
+
+/// Install tersify instructions into `.github/copilot-instructions.md` in the
+/// current working directory.
+///
+/// If the file already exists, the tersify section is appended (idempotent).
+fn install_copilot() -> Result<()> {
+    let path = copilot_path()?;
+
+    // Check if our section is already there
+    if path.exists() {
+        let existing = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        if existing.contains("tersify") {
+            println!("✓ GitHub Copilot — tersify already in {}", path.display());
+            return Ok(());
+        }
+        // Append to existing file
+        let mut content = existing;
+        content.push_str("\n---\n\n");
+        content.push_str(COPILOT_INSTRUCTIONS_CONTENT);
+        std::fs::write(&path, content)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+    } else {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        std::fs::write(&path, COPILOT_INSTRUCTIONS_CONTENT)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+    }
+
+    println!(
+        "✓ GitHub Copilot — instructions installed ({})",
+        path.display()
+    );
+    println!("  Copilot will now suggest running tersify before reading files.");
+    Ok(())
+}
+
+fn uninstall_copilot() -> Result<()> {
+    let path = copilot_path()?;
+
+    if !path.exists() {
+        println!("Nothing to uninstall — {} not found.", path.display());
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+
+    if !content.contains("tersify") {
+        println!("tersify section not found in {}.", path.display());
+        return Ok(());
+    }
+
+    // Remove the tersify section (everything after the last `---\n\n` before it,
+    // or the whole file if tersify is the only content).
+    let stripped = remove_tersify_section(&content);
+    if stripped.trim().is_empty() {
+        std::fs::remove_file(&path)
+            .with_context(|| format!("failed to remove {}", path.display()))?;
+        println!("✓ Removed {} (was only tersify content)", path.display());
+    } else {
+        std::fs::write(&path, stripped)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        println!("✓ Removed tersify section from {}", path.display());
+    }
+    Ok(())
+}
+
+/// Remove the tersify block from copilot-instructions content.
+fn remove_tersify_section(content: &str) -> String {
+    // If the file starts with the tersify section (no prior content), return empty.
+    if content.trim_start().starts_with("## tersify") {
+        return String::new();
+    }
+    // Otherwise, remove `\n---\n\n## tersify ...` to end of file.
+    if let Some(pos) = content.find("\n---\n\n## tersify") {
+        return content[..pos].to_string();
+    }
+    // Fallback: remove any line that mentions tersify and trailing blank lines.
+    content
+        .lines()
+        .filter(|l| !l.contains("tersify"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn copilot_path() -> Result<std::path::PathBuf> {
+    let cwd = std::env::current_dir().context("failed to get current directory")?;
+    Ok(cwd.join(".github").join("copilot-instructions.md"))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

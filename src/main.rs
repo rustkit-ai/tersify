@@ -29,24 +29,26 @@ fn main() -> Result<()> {
         Some(Command::Install {
             cursor,
             windsurf,
+            copilot,
             all,
         }) => {
             if all {
                 install::run_all()?;
             } else {
-                let target = resolve_target(cursor, windsurf);
+                let target = resolve_target(cursor, windsurf, copilot);
                 install::run_with_opts(target)?;
             }
         }
         Some(Command::Uninstall {
             cursor,
             windsurf,
+            copilot,
             all,
         }) => {
             if all {
                 install::uninstall_all()?;
             } else {
-                let target = resolve_target(cursor, windsurf);
+                let target = resolve_target(cursor, windsurf, copilot);
                 install::uninstall_with_opts(target)?;
             }
         }
@@ -69,11 +71,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn resolve_target(cursor: bool, windsurf: bool) -> Target {
+fn resolve_target(cursor: bool, windsurf: bool, copilot: bool) -> Target {
     if cursor {
         Target::Cursor
     } else if windsurf {
         Target::Windsurf
+    } else if copilot {
+        Target::Copilot
     } else {
         Target::ClaudeCode
     }

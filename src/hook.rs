@@ -1,11 +1,13 @@
-//! `tersify __hook` — Claude Code PostToolUse hook handler.
+//! `tersify hook` — Claude Code hook handler.
 //!
-//! Called by Claude Code after every `Read` tool invocation.
-//! Reads the hook JSON payload from stdin, compresses the file content,
-//! and outputs the Claude Code PostToolUse response JSON to stdout.
+//! Handles three hook events:
 //!
-//! Claude Code injects the compressed content as `additionalContext`
-//! and suppresses the original (verbose) file content.
+//! - **PostToolUse Read** — compresses file content after Claude reads it, injecting
+//!   the tersified version as `additionalContext` and suppressing the original.
+//! - **PostToolUse Bash** — compresses bash command output using the same pipeline.
+//! - **PreToolUse Write/Edit** — reads the current file before Claude writes or edits
+//!   it, compresses it, and injects the compact version as context so Claude has a
+//!   fresh reference without a separate read.
 
 use anyhow::Result;
 use serde_json::json;
@@ -19,18 +21,35 @@ pub fn run() -> Result<()> {
 
     let input: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
-        // Malformed JSON — silently pass through (don't break Claude)
-        Err(_) => return Ok(()),
+        Err(_) => return Ok(()), // Malformed JSON — silently pass through
     };
 
-    // ── Extract file content from tool_response ───────────────────────────
-    let content = extract_content(&input);
-    let content = match content {
+    let event = input
+        .get("hookEventName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let tool = input
+        .get("tool_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    match (event, tool) {
+        ("PostToolUse", "Read") => handle_post_read(&input),
+        ("PostToolUse", "Bash") => handle_post_bash(&input),
+        ("PreToolUse", "Write") | ("PreToolUse", "Edit") => handle_pre_write_edit(&input),
+        // Unknown event — pass through silently
+        _ => Ok(()),
+    }
+}
+
+// ── PostToolUse Read ──────────────────────────────────────────────────────────
+
+fn handle_post_read(input: &serde_json::Value) -> Result<()> {
+    let content = match extract_response_content(input) {
         Some(c) if !c.trim().is_empty() => c,
-        _ => return Ok(()), // nothing to compress
+        _ => return Ok(()),
     };
 
-    // ── Detect language from file path ────────────────────────────────────
     let file_path = input
         .get("tool_input")
         .and_then(|i| i.get("file_path"))
@@ -41,9 +60,78 @@ pub fn run() -> Result<()> {
         None => detect::detect(content),
     };
 
-    // ── Compress ──────────────────────────────────────────────────────────
+    compress_and_respond(content, &ct, true)
+}
+
+// ── PostToolUse Bash ──────────────────────────────────────────────────────────
+
+fn handle_post_bash(input: &serde_json::Value) -> Result<()> {
+    let content = match extract_response_content(input) {
+        Some(c) if !c.trim().is_empty() => c,
+        _ => return Ok(()),
+    };
+
+    // Detect content type from the text itself (no file path for bash output)
+    let ct = detect::detect(content);
+    compress_and_respond(content, &ct, true)
+}
+
+// ── PreToolUse Write / Edit ───────────────────────────────────────────────────
+
+fn handle_pre_write_edit(input: &serde_json::Value) -> Result<()> {
+    let file_path = match input
+        .get("tool_input")
+        .and_then(|i| i.get("file_path"))
+        .and_then(|f| f.as_str())
+    {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+
+    let path = std::path::Path::new(file_path);
+
+    // Nothing useful to do if the file doesn't exist yet
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) if !c.trim().is_empty() => c,
+        _ => return Ok(()),
+    };
+
+    let ct = detect::detect_for_path(path, &content);
     let opts = CompressOptions::default();
-    let compressed = match tersify::compress::compress_with(content, &ct, &opts) {
+
+    let compressed = match tersify::compress::compress_with(&content, &ct, &opts) {
+        Ok(c) => c,
+        Err(_) => return Ok(()),
+    };
+
+    let before = tokens::count(&content);
+    let after = tokens::count(&compressed);
+
+    if after >= before {
+        return Ok(());
+    }
+
+    let pct = (1.0 - after as f64 / before as f64) * 100.0;
+
+    // PreToolUse response: allow the tool to proceed, inject compressed file as context
+    let response = json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": format!(
+                "[tersify: current file {before}→{after} tokens ({pct:.0}% smaller)]\n\n{compressed}"
+            )
+        }
+    });
+
+    println!("{response}");
+    Ok(())
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+fn compress_and_respond(content: &str, ct: &detect::ContentType, suppress: bool) -> Result<()> {
+    let opts = CompressOptions::default();
+    let compressed = match tersify::compress::compress_with(content, ct, &opts) {
         Ok(c) => c,
         Err(_) => return Ok(()),
     };
@@ -51,24 +139,19 @@ pub fn run() -> Result<()> {
     let before = tokens::count(content);
     let after = tokens::count(&compressed);
 
-    // Skip if compression made no difference
     if after >= before {
         return Ok(());
     }
 
-    // ── Record stats ──────────────────────────────────────────────────────
     let _ = crate::stats::record_with_lang(before, after, Some(ct.lang_str()));
 
-    // ── Output Claude Code PostToolUse hook response ──────────────────────
-    // suppressOutput: hide the raw file content from Claude's context.
-    // additionalContext: inject the compressed version instead.
     let pct = (1.0 - after as f64 / before as f64) * 100.0;
     let response = json!({
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
-            "suppressOutput": true,
+            "suppressOutput": suppress,
             "additionalContext": format!(
-                "[tersify: {before}→{after} tokens, {pct:.0}% saved]\n\n{compressed}",
+                "[tersify: {before}→{after} tokens, {pct:.0}% saved]\n\n{compressed}"
             )
         }
     });
@@ -80,7 +163,7 @@ pub fn run() -> Result<()> {
 /// Extract the text content from a Claude Code tool_response payload.
 ///
 /// Handles both array-of-content-blocks and plain string formats.
-fn extract_content(input: &serde_json::Value) -> Option<&str> {
+fn extract_response_content(input: &serde_json::Value) -> Option<&str> {
     let response = input.get("tool_response")?;
 
     // Array format: {"content": [{"type": "text", "text": "..."}]}

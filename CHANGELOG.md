@@ -4,6 +4,128 @@ All notable changes to tersify are documented here.
 
 ---
 
+## [0.5.0] — 2026-03-18
+
+### Added
+
+- **GitHub Copilot integration** — `tersify install --copilot` writes
+  `.github/copilot-instructions.md` in the current project directory, telling Copilot to run
+  tersify before reading files. Idempotent: if the file already exists, the tersify section is
+  appended. `tersify uninstall --copilot` removes it cleanly.
+
+- **PostToolUse Bash hook** — The Claude Code hook now also fires on `Bash` tool outputs.
+  When Claude runs shell commands whose output contains file content (e.g. `cat`, `grep -r`),
+  the output is compressed before entering the context window.
+
+- **PreToolUse Write/Edit hook** — Before Claude writes or edits a file, the current on-disk
+  version is read, compressed, and injected as `additionalContext`. Claude gets a compact
+  reference of what it's about to change without requiring a separate Read call.
+
+- **MinHash LSH upgrade** — `--smart` deduplication upgraded from 16 to 64 hash functions
+  (4× more accurate, expected error ≈ ±2.5%) with LSH banding (16 bands × 4 hashes) for
+  O(1) candidate lookup instead of O(n) linear scan. Detection probability at the threshold
+  (0.72 Jaccard): ~99.7%.
+
+---
+
+## [0.4.1] — 2026-03-18
+
+### Fixed
+
+- Stats cost columns now right-aligned with `{:>16}` so all rows line up regardless of dollar amount width.
+
+---
+
+## [0.4.0] — 2026-03-18
+
+### Added
+
+- **5 new languages: HTML, CSS, SQL, Shell, YAML** — Standard compression for all 5. HTML strips
+  `<!-- -->` comments; CSS strips `/* */` only (preserves `//` inside `url()`); SQL strips `--` and
+  `/* */` (respects single-quoted strings); Shell strips `#` comments while preserving shebangs
+  (`#!/`); YAML strips full-line and inline `#` comments.
+
+- **Precise BPE token counting** — Replaced the `÷4` heuristic with
+  [tiktoken-rs](https://crates.io/crates/tiktoken-rs) `cl100k_base` (GPT-4 / Claude tokenizer).
+  Token counts are now accurate to ±1%.
+
+- **Incremental file cache** — Compressed results are cached in `~/.tersify/cache/` keyed by
+  content hash + option flags. Repeated compressions of unchanged files return instantly with zero
+  re-processing.
+
+- **Custom strip rules** — Define project-specific patterns to strip in `.tersify.toml`:
+
+  ```toml
+  [strip]
+  patterns = [
+    'console\.log\([^)]*\);?',
+    '# TODO.*',
+  ]
+  ```
+
+  Or pass them ad-hoc: `tersify src/ -p 'console\.log\(.*?\)'`. CLI flags and config patterns are
+  merged and deduplicated. The hook picks up `.tersify.toml` automatically.
+
+### Removed
+
+- **npm package** — Removed the npm wrapper entirely. Install via Homebrew, cargo, or the one-liner
+  install script instead.
+
+---
+
+## [0.3.4] — 2026-03-17
+
+### Added
+
+- **`tersify stats` rewrite** — Stats now record per-language token counts, show a cost savings
+  table across 4 models (claude-sonnet-4.6, claude-opus-4.6, gpt-4o, gemini-2.5-pro), and break
+  down savings by language.
+
+- **Homebrew tap** — `brew tap rustkit-ai/tap && brew install tersify`. Formula is auto-updated
+  on every tagged release via GitHub Actions.
+
+- **`tersify install --all`** — Auto-detect all present AI editors (Claude Code + Cursor + Windsurf)
+  and install tersify hooks into all of them in one command.
+
+### Changed
+
+- Improved README with cleaner install section and benchmark tables.
+- Claude Code hook migrated from legacy `hooks.json` to `settings.json` (PostToolUse).
+
+---
+
+## [0.3.3] — 2026-03-17
+
+### Added
+
+- **`.tersifyignore`** — Place a `.tersifyignore` in any directory; tersify skips matched paths
+  during directory traversal. Supports `*` wildcards and relative path patterns.
+
+- **Parallel directory compression** — `tersify src/` now uses `rayon` to process files in
+  parallel across all available CPU cores.
+
+- **Per-language stats** — `tersify stats` shows a breakdown by language alongside the cumulative
+  totals.
+
+- **`.tersify.toml` config** — Project-level config file for persistent `--ast`, `--smart`,
+  `--strip-docs`, and `--budget` defaults.
+
+- **GitHub Actions workflow** — Release CI builds binaries for
+  `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`,
+  `aarch64-unknown-linux-musl`, and `x86_64-pc-windows-msvc`; creates a GitHub Release with
+  archives + SHA256 checksums; auto-updates the Homebrew formula.
+
+---
+
+## [0.3.1] — 2026-03-17
+
+### Added
+
+- **One-liner install script** — `curl -fsSL .../install.sh | bash` downloads the right binary,
+  places it in `~/.local/bin`, and runs `tersify install --all`.
+
+---
+
 ## [0.3.0] — 2026-03-17
 
 ### Added
