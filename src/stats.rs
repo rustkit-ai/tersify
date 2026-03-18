@@ -114,9 +114,9 @@ pub fn run() -> anyhow::Result<()> {
     for (model, price_per_m) in COST_MODELS {
         let saved_usd = saved as f64 / 1_000_000.0 * price_per_m;
         println!(
-            "    {:<22} ${:.2}/M   → {}",
+            "    {:<22} {:>8}   → {:>16}",
             model,
-            price_per_m,
+            format!("${:.2}/M", price_per_m),
             fmt_usd(saved_usd)
         );
     }
@@ -130,7 +130,7 @@ pub fn run() -> anyhow::Result<()> {
         for (lang, ls) in langs {
             let lang_usd = ls.saved() as f64 / 1_000_000.0 * COST_MODELS[0].1; // sonnet pricing
             println!(
-                "    {:<16} {:>9} → {:>9}  ({:.0}%)   {}",
+                "    {:<16} {:>9} → {:>9}  ({:.0}%)   {:>16}",
                 lang,
                 fmt_num(ls.tokens_before),
                 fmt_num(ls.tokens_after),
