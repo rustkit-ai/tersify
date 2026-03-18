@@ -229,6 +229,7 @@ fn call_compress(id: Option<Value>, args: &Value) -> Value {
         ast,
         smart,
         strip_docs: false,
+        custom_patterns: vec![],
     };
 
     let compressed = match compress::compress_with(text, &ct, &opts) {

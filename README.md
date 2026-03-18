@@ -174,7 +174,7 @@ Use `--ast` when you want Claude to understand a project's shape without reading
 
 ```bash
 tersify src/main.rs            # single file → stdout
-tersify src/                   # entire directory (parallel)
+tersify src/                   # entire directory (parallel, cached)
 cat file.rs | tersify          # pipe stdin
 git diff | tersify             # compress diffs
 
@@ -259,6 +259,11 @@ Run `tersify bench` to reproduce locally.
 | PHP | ✓ | ✓ | `.php` |
 | Swift | ✓ | — | `.swift` |
 | Kotlin | ✓ | — | `.kt` |
+| HTML | ✓ | — | `.html` `.htm` |
+| CSS | ✓ | — | `.css` |
+| SQL | ✓ | — | `.sql` |
+| Shell | ✓ | — | `.sh` `.bash` |
+| YAML | ✓ | — | `.yaml` `.yml` |
 | JSON / JSONC | ✓ | — | `.json` |
 | Logs | ✓ | — | `.log` |
 | Git diffs | ✓ | — | `.diff` `.patch` |
@@ -305,7 +310,7 @@ tersify token-cost src/ --model claude-sonnet
 
 ```toml
 [dependencies]
-tersify = "0.3"
+tersify = "0.4"
 ```
 
 ```rust
@@ -324,6 +329,33 @@ let out = compress_with(&src, &ct, &CompressOptions {
     ..Default::default()
 })?;
 ```
+
+---
+
+## Custom strip rules
+
+Create `.tersify.toml` at the root of your project to strip project-specific noise — debug logs, TODO comments, test scaffolding:
+
+```toml
+[strip]
+patterns = [
+  'console\.log\([^)]*\);?',   # JS/TS debug logs
+  '\bdebugger;',                # JS debugger statements
+  'print\(f?"[Dd]ebug.*"\)',   # Python debug prints
+  '# TODO.*',                  # TODO comments
+  '// FIXME.*',                # FIXME comments
+]
+```
+
+Patterns use [regex-lite](https://docs.rs/regex-lite) syntax. Each match is removed inline — lines that become empty are dropped entirely.
+
+One-off via CLI flag (no config needed):
+```bash
+tersify src/ --pattern 'console\.log\([^)]*\);?'
+tersify src/ -p '\bdebugger;' -p '# TODO.*'
+```
+
+The hook picks up `.tersify.toml` automatically — patterns apply on every file Claude reads.
 
 ---
 
@@ -349,6 +381,7 @@ tersify [FILES|DIRS]           Compress to stdout (stdin if omitted)
   -a, --ast                    Signatures only (tree-sitter)
   -s, --smart                  Semantic deduplication (MinHash)
       --strip-docs             Remove doc comments too (///, /** */)
+  -p, --pattern <REGEX>        Strip matching text (repeatable)
 
 tersify install [--cursor|--windsurf|--all]    Hook into AI editors
 tersify uninstall [--cursor|--windsurf|--all]  Remove hooks
@@ -361,7 +394,7 @@ tersify mcp                    Start MCP server (stdio)
 tersify completions <shell>    Shell completions (bash|zsh|fish)
 ```
 
-`--type` values: `rust` `python` `javascript` `typescript` `tsx` `go` `ruby` `java` `c` `cpp` `csharp` `php` `swift` `kotlin` `json` `logs` `diff` `text`
+`--type` values: `rust` `python` `javascript` `typescript` `tsx` `go` `ruby` `java` `c` `cpp` `csharp` `php` `swift` `kotlin` `html` `css` `sql` `shell` `yaml` `json` `logs` `diff` `text`
 
 ---
 

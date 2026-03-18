@@ -109,6 +109,8 @@ fn run_compress(cli: Cli, cfg: &config::Config) -> Result<()> {
             total_before += before;
             total_after += after;
         } else {
+            let (compressed, before, after) = input::compress_file_with(path, forced, &opts)?;
+            // Re-detect language for stats (cheap, content already cached)
             let content = std::fs::read_to_string(path)?;
             let ct = if let Some(t) = forced {
                 t.parse::<tersify::detect::ContentType>()?
@@ -116,9 +118,6 @@ fn run_compress(cli: Cli, cfg: &config::Config) -> Result<()> {
                 detect::detect_for_path(path, &content)
             };
             let lang = ct.lang_str();
-            let before = tokens::count(&content);
-            let compressed = tersify::compress::compress_with(&content, &ct, &opts)?;
-            let after = tokens::count(&compressed);
 
             if inputs_count > 1 {
                 println!("// === {} ===", path.display());
@@ -167,12 +166,19 @@ fn compress_stdin(cli: &Cli, cfg: &config::Config) -> Result<()> {
 }
 
 fn build_opts(cli: &Cli, cfg: &config::Config, budget_override: Option<usize>) -> CompressOptions {
+    // Merge CLI patterns and config patterns (dedup by value)
+    let mut patterns = cfg.strip.patterns.clone();
+    for p in &cli.patterns {
+        if !patterns.contains(p) {
+            patterns.push(p.clone());
+        }
+    }
     CompressOptions {
-        // CLI flag overrides config, config overrides default (false)
         ast: cli.ast || cfg.defaults.ast,
         smart: cli.smart || cfg.defaults.smart,
         strip_docs: cli.strip_docs || cfg.defaults.strip_docs,
         budget: budget_override.or(cli.budget).or(cfg.defaults.budget),
+        custom_patterns: patterns,
     }
 }
 

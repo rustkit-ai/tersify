@@ -1,6 +1,6 @@
 [package]
 name = "tersify"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2024"
 description = "Universal LLM context compressor — pipe anything, get token-optimized output"
 license = "MIT"
@@ -43,3 +43,4 @@ tree-sitter-rust = "0.24"
 tree-sitter-typescript = "0.23"
 tree-sitter-c-sharp = "0.23"
 tree-sitter-php = "0.23"
+tiktoken-rs = "0.6"

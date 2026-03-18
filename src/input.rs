@@ -35,7 +35,10 @@ const INCLUDE_EXT: &[&str] = &[
     "java",    // C / C++
     "c", "cpp", "cc", "cxx", "h", "hpp", "hxx",   // Swift
     "swift", // Kotlin
-    "kt", "kts", // Data / config
+    "kt", "kts", // Web
+    "html", "htm", "css", // SQL
+    "sql", // Shell
+    "sh", "bash", // Data / config
     "json", "jsonc", "yaml", "yml", "toml", // Logs / diffs
     "log", "diff", "patch", // Docs
     "md", "txt",
@@ -128,13 +131,26 @@ pub fn compress_file(
 }
 
 /// Compress a single file with full [`CompressOptions`].
+///
+/// Results are cached by content + option hash in `~/.tersify/cache/`.
 pub fn compress_file_with(
     path: &Path,
     forced_type: Option<&str>,
     opts: &CompressOptions,
 ) -> Result<(String, usize, usize)> {
     let content = std::fs::read_to_string(path)?;
-    compress_content_with(&content, forced_type, Some(path), opts)
+    let opts_key =
+        (opts.ast as u8) | ((opts.strip_docs as u8) << 1) | ((opts.smart as u8) << 2);
+
+    if let Some(cached) = crate::cache::get(&content, opts_key) {
+        let before = tokens::count(&content);
+        let after = tokens::count(&cached);
+        return Ok((cached, before, after));
+    }
+
+    let result = compress_content_with(&content, forced_type, Some(path), opts)?;
+    crate::cache::set(&content, opts_key, &result.0);
+    Ok(result)
 }
 
 /// Compress raw content (e.g. from stdin).
@@ -232,7 +248,11 @@ pub fn compress_directory_with(
         ast: opts.ast,
         smart: opts.smart,
         strip_docs: opts.strip_docs,
+        custom_patterns: opts.custom_patterns.clone(),
     };
+
+    let opts_key =
+        (file_opts.ast as u8) | ((file_opts.strip_docs as u8) << 1) | ((file_opts.smart as u8) << 2);
 
     let results: Vec<(String, usize, usize)> = paths
         .par_iter()
@@ -241,6 +261,13 @@ pub fn compress_directory_with(
             if content.trim().is_empty() {
                 return None;
             }
+            // Try cache first
+            if let Some(cached) = crate::cache::get(&content, opts_key) {
+                let before = tokens::count(&content);
+                let after = tokens::count(&cached);
+                let chunk = format!("// === {} ===\n{}\n\n", path.display(), cached);
+                return Some((chunk, before, after));
+            }
             let ct = if let Some(t) = forced_type {
                 t.parse::<ContentType>().ok()?
             } else {
@@ -248,6 +275,7 @@ pub fn compress_directory_with(
             };
             let before = tokens::count(&content);
             let compressed = compress::compress_with(&content, &ct, &file_opts).ok()?;
+            crate::cache::set(&content, opts_key, &compressed);
             let after = tokens::count(&compressed);
             let chunk = format!("// === {} ===\n{}\n\n", path.display(), compressed);
             Some((chunk, before, after))

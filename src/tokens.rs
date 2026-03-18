@@ -1,14 +1,24 @@
 //! Token counting utilities.
 //!
-//! Uses the ~4 chars/token heuristic — accurate enough for budget enforcement
-//! without pulling in heavy tokenizer dependencies.
+//! Uses the cl100k_base BPE tokenizer (GPT-4 / Claude-compatible) for accurate
+//! token counts. The encoder is initialised once and cached for the process lifetime.
 
-/// Estimate the number of LLM tokens in `text`.
+use std::sync::OnceLock;
+use tiktoken_rs::CoreBPE;
+
+fn bpe() -> &'static CoreBPE {
+    static ENCODER: OnceLock<CoreBPE> = OnceLock::new();
+    ENCODER.get_or_init(|| tiktoken_rs::cl100k_base().expect("cl100k_base tokenizer"))
+}
+
+/// Count the number of LLM tokens in `text` using the cl100k_base BPE tokenizer.
 ///
-/// Uses the standard ~4 characters per token approximation, which is
-/// accurate within ±10% for most English and code content.
+/// Accurate for GPT-4 and within ~5% for Claude and other modern models.
 pub fn count(text: &str) -> usize {
-    (text.len() as f64 / 4.0).ceil() as usize
+    if text.is_empty() {
+        return 0;
+    }
+    bpe().encode_ordinary(text).len()
 }
 
 /// Compute the percentage of tokens saved after compression.
@@ -28,6 +38,12 @@ mod tests {
     #[test]
     fn count_empty() {
         assert_eq!(count(""), 0);
+    }
+
+    #[test]
+    fn count_simple() {
+        // "hello world" is 2 tokens in cl100k_base
+        assert_eq!(count("hello world"), 2);
     }
 
     #[test]

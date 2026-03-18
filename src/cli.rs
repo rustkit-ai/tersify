@@ -16,7 +16,7 @@ pub struct Cli {
     /// Files or directories to compress (defaults to stdin)
     pub inputs: Vec<String>,
 
-    /// Force content type: code | rust | python | js | ts | go | ruby | java | c | swift | kotlin | json | logs | diff | text
+    /// Force content type: rust | python | js | ts | go | ruby | java | c | swift | kotlin | html | css | sql | shell | yaml | json | logs | diff | text
     #[arg(long, short = 't')]
     pub r#type: Option<String>,
 
@@ -39,6 +39,10 @@ pub struct Cli {
     /// Also strip doc comments (///, //!, /** */, Python docstrings)
     #[arg(long)]
     pub strip_docs: bool,
+
+    /// Custom regex pattern to strip (repeatable: --pattern 'console\.log\(.*?\)')
+    #[arg(long = "pattern", short = 'p')]
+    pub patterns: Vec<String>,
 }
 
 #[derive(Subcommand)]

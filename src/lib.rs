@@ -36,6 +36,7 @@
 //! assert!(!out.contains("a + b"));
 //! ```
 
+pub mod cache;
 pub mod compress;
 pub mod detect;
 pub mod error;

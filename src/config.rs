@@ -13,6 +13,17 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     #[serde(default)]
     pub defaults: Defaults,
+    #[serde(default)]
+    pub strip: Strip,
+}
+
+/// Custom line-stripping rules.
+#[derive(Debug, Default, Deserialize)]
+pub struct Strip {
+    /// Regex patterns (regex-lite syntax). Lines whose matched text
+    /// becomes empty after all replacements are dropped entirely.
+    #[serde(default)]
+    pub patterns: Vec<String>,
 }
 
 /// Default CLI flag values.

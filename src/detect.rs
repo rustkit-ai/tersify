@@ -27,6 +27,11 @@ pub enum Language {
     Php,
     Swift,
     Kotlin,
+    Html,
+    Css,
+    Sql,
+    Shell,
+    Yaml,
     Generic,
 }
 
@@ -78,6 +83,11 @@ impl Language {
             Self::Php => "php",
             Self::Swift => "swift",
             Self::Kotlin => "kotlin",
+            Self::Html => "html",
+            Self::Css => "css",
+            Self::Sql => "sql",
+            Self::Shell => "shell",
+            Self::Yaml => "yaml",
             Self::Generic => "generic",
         }
     }
@@ -104,6 +114,11 @@ impl std::str::FromStr for ContentType {
             "php" => Ok(Self::Code(Language::Php)),
             "swift" => Ok(Self::Code(Language::Swift)),
             "kotlin" | "kt" => Ok(Self::Code(Language::Kotlin)),
+            "html" | "htm" => Ok(Self::Code(Language::Html)),
+            "css" => Ok(Self::Code(Language::Css)),
+            "sql" => Ok(Self::Code(Language::Sql)),
+            "shell" | "sh" | "bash" => Ok(Self::Code(Language::Shell)),
+            "yaml" | "yml" => Ok(Self::Code(Language::Yaml)),
             // Other types
             "json" => Ok(Self::Json),
             "logs" | "log" => Ok(Self::Logs),
@@ -130,6 +145,11 @@ pub fn detect_for_path(path: &Path, content: &str) -> ContentType {
         Some("php" | "phtml" | "php5") => ContentType::Code(Language::Php),
         Some("swift") => ContentType::Code(Language::Swift),
         Some("kt" | "kts") => ContentType::Code(Language::Kotlin),
+        Some("html" | "htm") => ContentType::Code(Language::Html),
+        Some("css") => ContentType::Code(Language::Css),
+        Some("sql") => ContentType::Code(Language::Sql),
+        Some("sh" | "bash" | "zsh" | "fish") => ContentType::Code(Language::Shell),
+        Some("yaml" | "yml") => ContentType::Code(Language::Yaml),
         Some("json" | "jsonc") => ContentType::Json,
         Some("log") => ContentType::Logs,
         Some("diff" | "patch") => ContentType::Diff,
@@ -158,6 +178,33 @@ pub fn detect(input: &str) -> ContentType {
 
 /// Infer programming language from content patterns.
 pub fn detect_language(s: &str) -> Option<Language> {
+    let trimmed = s.trim_start();
+    // HTML
+    if trimmed.starts_with("<!DOCTYPE")
+        || trimmed.starts_with("<!doctype")
+        || trimmed.starts_with("<html")
+        || trimmed.starts_with("<HTML")
+    {
+        return Some(Language::Html);
+    }
+    // Shell scripts — shebang line
+    if s.starts_with("#!/") {
+        return Some(Language::Shell);
+    }
+    // SQL — common statement starters
+    {
+        let up = trimmed.to_uppercase();
+        if up.starts_with("SELECT ")
+            || up.starts_with("INSERT ")
+            || up.starts_with("UPDATE ")
+            || up.starts_with("DELETE ")
+            || up.starts_with("CREATE ")
+            || up.starts_with("DROP ")
+            || up.starts_with("ALTER ")
+        {
+            return Some(Language::Sql);
+        }
+    }
     // C/C++: distinctive preprocessor directives
     if s.contains("#include") || s.contains("#define") || s.contains("#pragma") {
         return Some(Language::C);

@@ -6,14 +6,18 @@ use crate::detect::Language;
 /// When `strip_docs` is true, doc comments (`///`, `//!`, `/** */`, Python docstrings) are
 /// also removed.
 pub fn compress(input: &str, lang: &Language, strip_docs: bool) -> String {
-    let stripped = match lang {
-        Language::Python => strip_python(input, strip_docs),
+    match lang {
+        Language::Python => collapse_blank_lines(&strip_python(input, strip_docs)),
         Language::Ruby => strip_ruby(input),
+        Language::Html => strip_html(input),
+        Language::Css => strip_css(input),
+        Language::Sql => strip_sql(input),
+        Language::Shell => strip_shell(input),
+        Language::Yaml => strip_yaml(input),
         // Tsx shares TypeScript comment rules — map to TypeScript for stripping
-        Language::Tsx => strip_cstyle(input, &Language::TypeScript, strip_docs),
-        _ => strip_cstyle(input, lang, strip_docs),
-    };
-    collapse_blank_lines(&stripped)
+        Language::Tsx => collapse_blank_lines(&strip_cstyle(input, &Language::TypeScript, strip_docs)),
+        _ => collapse_blank_lines(&strip_cstyle(input, lang, strip_docs)),
+    }
 }
 
 // ── C-style languages (Rust, JS, TS, Go, Java, C, Swift, Kotlin, Generic) ───
@@ -256,6 +260,290 @@ fn strip_ruby_inline_comment(line: &str) -> &str {
             continue;
         }
         if c == '#' {
+            return line[..byte_pos].trim_end();
+        }
+        byte_pos += c.len_utf8();
+        i += 1;
+    }
+    line
+}
+
+// ── HTML ──────────────────────────────────────────────────────────────────────
+
+/// Strip `<!-- ... -->` HTML comments and collapse blank lines.
+fn strip_html(input: &str) -> String {
+    let src: Vec<char> = input.chars().collect();
+    let len = src.len();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+
+    while i < len {
+        // <!-- ... -->
+        if i + 3 < len
+            && src[i] == '<'
+            && src[i + 1] == '!'
+            && src[i + 2] == '-'
+            && src[i + 3] == '-'
+        {
+            i += 4;
+            while i + 2 < len && !(src[i] == '-' && src[i + 1] == '-' && src[i + 2] == '>') {
+                if src[i] == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+            if i + 2 < len {
+                i += 3; // consume -->
+            }
+            continue;
+        }
+        out.push(src[i]);
+        i += 1;
+    }
+
+    collapse_blank_lines(&out)
+}
+
+// ── CSS ───────────────────────────────────────────────────────────────────────
+
+/// Strip `/* ... */` CSS comments and collapse blank lines.
+/// Does NOT strip `//` sequences to preserve URLs like `url(//cdn.example.com/...)`.
+fn strip_css(input: &str) -> String {
+    let src: Vec<char> = input.chars().collect();
+    let len = src.len();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+
+    while i < len {
+        // /* ... */
+        if i + 1 < len && src[i] == '/' && src[i + 1] == '*' {
+            i += 2;
+            while i + 1 < len && !(src[i] == '*' && src[i + 1] == '/') {
+                if src[i] == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+            if i + 1 < len {
+                i += 2; // consume */
+            }
+            continue;
+        }
+        out.push(src[i]);
+        i += 1;
+    }
+
+    collapse_blank_lines(&out)
+}
+
+// ── SQL ───────────────────────────────────────────────────────────────────────
+
+/// Strip SQL `--` line comments and `/* ... */` block comments; collapse blank lines.
+fn strip_sql(input: &str) -> String {
+    let src: Vec<char> = input.chars().collect();
+    let len = src.len();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+
+    while i < len {
+        // -- line comment
+        if i + 1 < len && src[i] == '-' && src[i + 1] == '-' {
+            while i < len && src[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        // /* ... */ block comment
+        if i + 1 < len && src[i] == '/' && src[i + 1] == '*' {
+            i += 2;
+            while i + 1 < len && !(src[i] == '*' && src[i + 1] == '/') {
+                if src[i] == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+            if i + 1 < len {
+                i += 2;
+            }
+            continue;
+        }
+        // Single-quoted string literal
+        if src[i] == '\'' {
+            out.push(src[i]);
+            i += 1;
+            while i < len {
+                out.push(src[i]);
+                if src[i] == '\'' {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        out.push(src[i]);
+        i += 1;
+    }
+
+    collapse_blank_lines(&out)
+}
+
+// ── Shell ─────────────────────────────────────────────────────────────────────
+
+/// Strip shell `#` comments (preserving shebang `#!/`), strip inline `#` comments
+/// outside quoted strings, and collapse blank lines.
+fn strip_shell(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut is_first_line = true;
+
+    for line in input.lines() {
+        let trimmed = line.trim_start();
+        // Keep shebang on first non-empty line
+        if is_first_line && line.starts_with("#!") {
+            out.push_str(line);
+            out.push('\n');
+            is_first_line = false;
+            continue;
+        }
+        if !trimmed.is_empty() {
+            is_first_line = false;
+        }
+        // Full-line comment
+        if trimmed.starts_with('#') {
+            out.push('\n');
+            continue;
+        }
+        // Strip inline comment outside quoted strings
+        let clean = strip_shell_inline_comment(line);
+        out.push_str(clean);
+        out.push('\n');
+    }
+
+    collapse_blank_lines(out.trim_end())
+}
+
+/// Strip the inline `#` comment from a shell line, respecting quoted strings.
+fn strip_shell_inline_comment(line: &str) -> &str {
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    let mut byte_pos = 0usize;
+
+    while i < chars.len() {
+        let c = chars[i];
+        // Single-quoted string: no escape sequences
+        if c == '\'' {
+            byte_pos += c.len_utf8();
+            i += 1;
+            while i < chars.len() && chars[i] != '\'' {
+                byte_pos += chars[i].len_utf8();
+                i += 1;
+            }
+            if i < chars.len() {
+                byte_pos += chars[i].len_utf8();
+                i += 1;
+            }
+            continue;
+        }
+        // Double-quoted string
+        if c == '"' {
+            byte_pos += c.len_utf8();
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    byte_pos += chars[i].len_utf8();
+                    i += 1;
+                }
+                byte_pos += chars[i].len_utf8();
+                i += 1;
+            }
+            if i < chars.len() {
+                byte_pos += chars[i].len_utf8();
+                i += 1;
+            }
+            continue;
+        }
+        if c == '#' {
+            return line[..byte_pos].trim_end();
+        }
+        byte_pos += c.len_utf8();
+        i += 1;
+    }
+    line
+}
+
+// ── YAML ──────────────────────────────────────────────────────────────────────
+
+/// Strip YAML `#` comments — both full-line and inline (preceded by whitespace) —
+/// respecting quoted strings; collapse blank lines.
+fn strip_yaml(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+
+    for line in input.lines() {
+        let trimmed = line.trim_start();
+        // Full-line comment
+        if trimmed.starts_with('#') {
+            out.push('\n');
+            continue;
+        }
+        // Strip inline comment outside quoted strings
+        let clean = strip_yaml_inline_comment(line);
+        out.push_str(clean);
+        out.push('\n');
+    }
+
+    collapse_blank_lines(out.trim_end())
+}
+
+/// Strip an inline YAML `# comment` (preceded by whitespace), respecting quoted strings.
+fn strip_yaml_inline_comment(line: &str) -> &str {
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    let mut byte_pos = 0usize;
+
+    while i < chars.len() {
+        let c = chars[i];
+        // Single-quoted YAML string ('' escapes a single quote inside)
+        if c == '\'' {
+            byte_pos += c.len_utf8();
+            i += 1;
+            while i < chars.len() {
+                if chars[i] == '\'' {
+                    byte_pos += chars[i].len_utf8();
+                    i += 1;
+                    if i < chars.len() && chars[i] == '\'' {
+                        // escaped '' — continue inside string
+                        byte_pos += chars[i].len_utf8();
+                        i += 1;
+                    } else {
+                        break; // end of string
+                    }
+                } else {
+                    byte_pos += chars[i].len_utf8();
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        // Double-quoted YAML string
+        if c == '"' {
+            byte_pos += c.len_utf8();
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    byte_pos += chars[i].len_utf8();
+                    i += 1;
+                }
+                byte_pos += chars[i].len_utf8();
+                i += 1;
+            }
+            if i < chars.len() {
+                byte_pos += chars[i].len_utf8();
+                i += 1;
+            }
+            continue;
+        }
+        // YAML inline comment: # preceded by whitespace
+        if c == '#' && i > 0 && (chars[i - 1] == ' ' || chars[i - 1] == '\t') {
             return line[..byte_pos].trim_end();
         }
         byte_pos += c.len_utf8();
