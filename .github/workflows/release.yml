@@ -130,12 +130,6 @@ jobs:
             ```
             Downloads the binary, adds it to `~/.local/bin`, and hooks into all detected AI editors automatically.
 
-            **npm**
-            ```bash
-            npm install -g tersify
-            tersify install --all
-            ```
-
             **Cargo**
             ```bash
             cargo install tersify

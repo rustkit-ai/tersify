@@ -5,7 +5,6 @@
 **Strip the noise from any file before it hits your LLM context window.**
 
 [![Crates.io](https://img.shields.io/crates/v/tersify)](https://crates.io/crates/tersify)
-[![npm](https://img.shields.io/npm/v/tersify)](https://www.npmjs.com/package/tersify)
 [![CI](https://img.shields.io/github/actions/workflow/status/rustkit-ai/tersify/ci.yml?label=tests)](https://github.com/rustkit-ai/tersify/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -37,19 +36,13 @@ brew install tersify
 curl -fsSL https://raw.githubusercontent.com/rustkit-ai/tersify/main/install.sh | bash
 ```
 
-**npm**
-```bash
-npm install -g tersify
-tersify install --all
-```
-
 **Cargo**
 ```bash
 cargo install tersify
 tersify install --all
 ```
 
-All methods end with `tersify install --all` — auto-detects Claude Code, Cursor, and Windsurf and hooks into all of them.
+Both methods end with `tersify install --all` — auto-detects Claude Code, Cursor, and Windsurf and hooks into all of them.
 
 ---
 
