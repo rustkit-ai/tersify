@@ -9,8 +9,6 @@
 //! is merely a wrong cached result — the next run on changed content will
 //! produce a fresh entry.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 fn cache_dir() -> PathBuf {
@@ -20,11 +18,21 @@ fn cache_dir() -> PathBuf {
     PathBuf::from(home).join(".tersify").join("cache")
 }
 
+/// Stable FNV-1a 64-bit hash — deterministic across all Rust versions and platforms.
+/// Unlike `DefaultHasher`, this produces the same value for the same input always.
+fn fnv64(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
 fn cache_key(content: &str, opts: u8) -> String {
-    let mut h = DefaultHasher::new();
-    content.hash(&mut h);
-    opts.hash(&mut h);
-    format!("{:016x}", h.finish())
+    let content_hash = fnv64(content.as_bytes());
+    let opts_hash = fnv64(&[opts]);
+    format!("{:016x}{:016x}", content_hash, opts_hash)
 }
 
 /// Retrieve a previously cached compression result.
@@ -40,6 +48,39 @@ pub fn set(content: &str, opts: u8, compressed: &str) {
     let dir = cache_dir();
     let _ = std::fs::create_dir_all(&dir);
     let _ = std::fs::write(dir.join(cache_key(content, opts)), compressed);
+}
+
+/// Return the total size in bytes of all cache entries.
+pub fn size_bytes() -> u64 {
+    let dir = cache_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// Return the number of cached entries.
+pub fn entry_count() -> usize {
+    let dir = cache_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return 0;
+    };
+    entries.flatten().count()
+}
+
+/// Delete all cache entries.
+pub fn clear() {
+    let dir = cache_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let _ = std::fs::remove_file(entry.path());
+    }
 }
 
 /// Evict all cached entries older than `max_age_days` days.

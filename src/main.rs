@@ -10,7 +10,7 @@ mod token_cost;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Command};
+use cli::{CacheCommand, Cli, Command};
 use install::Target;
 use is_terminal::IsTerminal;
 use std::{
@@ -52,8 +52,29 @@ fn main() -> Result<()> {
                 install::uninstall_with_opts(target)?;
             }
         }
-        Some(Command::Stats) => stats::run()?,
+        Some(Command::Stats { json }) => {
+            if json {
+                stats::run_json()?;
+            } else {
+                stats::run()?;
+            }
+        }
         Some(Command::StatsReset) => stats::reset()?,
+        Some(Command::Cache { command }) => match command {
+            CacheCommand::Stats => {
+                let entries = tersify::cache::entry_count();
+                let bytes = tersify::cache::size_bytes();
+                println!("  Cache entries : {entries}");
+                println!(
+                    "  Cache size    : {:.2} MB  (~/.tersify/cache/)",
+                    bytes as f64 / 1_048_576.0
+                );
+            }
+            CacheCommand::Clear => {
+                tersify::cache::clear();
+                println!("✓ Cache cleared.");
+            }
+        },
         Some(Command::Bench) => bench::run()?,
         Some(Command::TokenCost {
             inputs,
@@ -84,6 +105,9 @@ fn resolve_target(cursor: bool, windsurf: bool, copilot: bool) -> Target {
 }
 
 fn run_compress(cli: Cli, cfg: &config::Config) -> Result<()> {
+    // Evict cache entries not accessed in the last 30 days (best-effort, non-fatal).
+    tersify::cache::evict_old(30);
+
     if cli.inputs.is_empty() {
         if io::stdin().is_terminal() {
             eprintln!(

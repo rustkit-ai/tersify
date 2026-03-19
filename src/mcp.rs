@@ -304,20 +304,9 @@ fn call_estimate_cost(id: Option<Value>, args: &Value) -> Value {
     let after = tokens::count(&compressed);
     let saved_pct = tokens::savings_pct(before, after);
 
-    const MODELS: &[(&str, &str, f64)] = &[
-        ("claude-opus-4.6", "Anthropic", 15.0),
-        ("claude-sonnet-4.6", "Anthropic", 3.0),
-        ("claude-haiku-4.5", "Anthropic", 0.80),
-        ("gpt-4o", "OpenAI", 5.0),
-        ("gpt-4o-mini", "OpenAI", 0.15),
-        ("o1", "OpenAI", 15.0),
-        ("o3-mini", "OpenAI", 1.10),
-        ("gemini-2.5-pro", "Google", 1.25),
-        ("gemini-2.5-flash", "Google", 0.15),
-        ("deepseek-v3", "DeepSeek", 0.27),
-    ];
+    let models_table = tersify::MODEL_PRICING;
 
-    let models: Vec<_> = MODELS
+    let models: Vec<_> = models_table
         .iter()
         .filter(|(name, _, _)| {
             model_filter

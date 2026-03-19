@@ -78,9 +78,18 @@ pub enum Command {
         all: bool,
     },
     /// Show token savings statistics
-    Stats,
+    Stats {
+        /// Output as JSON instead of a formatted table
+        #[arg(long)]
+        json: bool,
+    },
     /// Reset saved statistics
     StatsReset,
+    /// Manage the compression cache (~/.tersify/cache/)
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommand,
+    },
     /// Benchmark compression savings across all content types
     Bench,
     /// Estimate LLM API cost before and after compression
@@ -105,4 +114,12 @@ pub enum Command {
     /// Internal PostToolUse hook handler for Claude Code (reads hook JSON from stdin)
     #[command(hide = true, name = "hook")]
     HookRun,
+}
+
+#[derive(Subcommand)]
+pub enum CacheCommand {
+    /// Show cache size and entry count
+    Stats,
+    /// Delete all cache entries
+    Clear,
 }

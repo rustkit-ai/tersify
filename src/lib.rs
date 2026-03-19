@@ -42,3 +42,17 @@ pub mod detect;
 pub mod error;
 pub mod input;
 pub mod tokens;
+
+/// LLM pricing table: (model name, provider, input $/M tokens) — early 2026.
+pub const MODEL_PRICING: &[(&str, &str, f64)] = &[
+    ("claude-opus-4.6", "Anthropic", 15.0),
+    ("claude-sonnet-4.6", "Anthropic", 3.0),
+    ("claude-haiku-4.5", "Anthropic", 0.80),
+    ("gpt-5.4", "OpenAI", 5.0),
+    ("gpt-4o-mini", "OpenAI", 0.15),
+    ("o1", "OpenAI", 15.0),
+    ("o3-mini", "OpenAI", 1.10),
+    ("gemini-2.5-pro", "Google", 1.25),
+    ("gemini-2.5-flash", "Google", 0.15),
+    ("deepseek-v3", "DeepSeek", 0.27),
+];

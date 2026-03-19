@@ -149,65 +149,49 @@ jobs:
     name: Update Homebrew tap
     needs: release
     runs-on: ubuntu-latest
-    # Only run if the homebrew-tap repo exists (set secret HOMEBREW_TAP_TOKEN)
-    if: ${{ vars.HOMEBREW_TAP_ENABLED == 'true' }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute source tarball SHA256
+      - name: Compute SHA256 for each binary
         id: sha
+        shell: bash
         run: |
-          TAG=${{ github.ref_name }}
-          URL="https://github.com/rustkit-ai/tersify/archive/refs/tags/${TAG}.tar.gz"
-          SHA=$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)
-          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE="https://github.com/rustkit-ai/tersify/releases/download/${GITHUB_REF_NAME}"
 
-      - name: Update formula in homebrew-tap
-        uses: actions/github-script@v7
+          fetch_sha() {
+            curl -fsSL "$1.sha256" | awk '{print $1}'
+          }
+
+          echo "version=$VERSION"                                                                             >> $GITHUB_OUTPUT
+          echo "aarch64_darwin=$(fetch_sha $BASE/tersify-aarch64-apple-darwin.tar.gz)"                       >> $GITHUB_OUTPUT
+          echo "x86_64_darwin=$(fetch_sha $BASE/tersify-x86_64-apple-darwin.tar.gz)"                         >> $GITHUB_OUTPUT
+          echo "aarch64_linux=$(fetch_sha $BASE/tersify-aarch64-unknown-linux-musl.tar.gz)"                   >> $GITHUB_OUTPUT
+          echo "x86_64_linux=$(fetch_sha $BASE/tersify-x86_64-unknown-linux-musl.tar.gz)"                     >> $GITHUB_OUTPUT
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
         with:
-          github-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          script: |
-            const { sha256, url, version } = ${{ toJson(steps.sha.outputs) }};
-            const formula = `class Tersify < Formula
-              desc "Universal LLM context compressor — pipe anything, get token-optimized output"
-              homepage "https://github.com/rustkit-ai/tersify"
-              url "${url}"
-              sha256 "${sha256}"
-              license "MIT"
+          repository: rustkit-ai/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: tap
 
-              depends_on "rust" => :build
+      - name: Update formula
+        shell: bash
+        run: |
+          F="tap/Formula/tersify.rb"
+          sed -i "s/version \".*\"/version \"${{ steps.sha.outputs.version }}\"/"   "$F"
+          sed -i "s/PLACEHOLDER_AARCH64_DARWIN/${{ steps.sha.outputs.aarch64_darwin }}/"  "$F"
+          sed -i "s/PLACEHOLDER_X86_64_DARWIN/${{ steps.sha.outputs.x86_64_darwin }}/"    "$F"
+          sed -i "s/PLACEHOLDER_AARCH64_LINUX/${{ steps.sha.outputs.aarch64_linux }}/"    "$F"
+          sed -i "s/PLACEHOLDER_X86_64_LINUX/${{ steps.sha.outputs.x86_64_linux }}/"      "$F"
 
-              def install
-                system "cargo", "install", *std_cargo_args
-              end
-
-              def post_install
-                system "\#{bin}/tersify", "install", "--all"
-              rescue StandardError
-                nil
-              end
-
-              test do
-                assert_match version.to_s, shell_output("\#{bin}/tersify --version")
-                (testpath/"test.rs").write("// comment\\nfn main() {}\\n")
-                output = shell_output("\#{bin}/tersify \#{testpath}/test.rs")
-                refute_match "// comment", output
-              end
-            end
-            `;
-            const owner = 'rustkit-ai';
-            const repo = 'homebrew-tap';
-            const path = 'Formula/tersify.rb';
-            let sha_file;
-            try {
-              const { data } = await github.rest.repos.getContent({ owner, repo, path });
-              sha_file = data.sha;
-            } catch {}
-            await github.rest.repos.createOrUpdateFileContents({
-              owner, repo, path,
-              message: `tersify ${version}`,
-              content: Buffer.from(formula).toString('base64'),
-              sha: sha_file,
-            });
+      - name: Commit + push to tap
+        working-directory: tap
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/tersify.rb
+          git commit -m "tersify ${{ steps.sha.outputs.version }}"
+          git push

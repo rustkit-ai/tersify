@@ -7,20 +7,7 @@ use std::{
 };
 use tersify::{compress::CompressOptions, input, tokens};
 
-/// Pricing entry: (display name, provider, input $/M tokens).
-/// Prices as of early 2026 — update when providers change pricing.
-const MODELS: &[(&str, &str, f64)] = &[
-    ("claude-opus-4.6", "Anthropic", 15.0),
-    ("claude-sonnet-4.6", "Anthropic", 3.0),
-    ("claude-haiku-4.5", "Anthropic", 0.80),
-    ("gpt-4o", "OpenAI", 5.0),
-    ("gpt-4o-mini", "OpenAI", 0.15),
-    ("o1", "OpenAI", 15.0),
-    ("o3-mini", "OpenAI", 1.10),
-    ("gemini-2.5-pro", "Google", 1.25),
-    ("gemini-2.5-flash", "Google", 0.15),
-    ("deepseek-v3", "DeepSeek", 0.27),
-];
+use tersify::MODEL_PRICING;
 
 pub fn run(inputs: &[String], forced_type: Option<&str>, model_filter: Option<&str>) -> Result<()> {
     let (before, after) = collect_tokens(inputs, forced_type)?;
@@ -37,7 +24,7 @@ pub fn run(inputs: &[String], forced_type: Option<&str>, model_filter: Option<&s
         fmt_tokens(saved_tokens),
     );
 
-    let models: Vec<_> = MODELS
+    let models: Vec<_> = MODEL_PRICING
         .iter()
         .filter(|(name, _, _)| {
             model_filter

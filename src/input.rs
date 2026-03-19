@@ -37,8 +37,10 @@ const INCLUDE_EXT: &[&str] = &[
     "swift", // Kotlin
     "kt", "kts", // Web
     "html", "htm", "css", // SQL
-    "sql", // Shell
-    "sh", "bash", // Data / config
+    "sql", // C#
+    "cs", // PHP
+    "php", "phtml", // Shell
+    "sh", "bash", "zsh", "fish", // Data / config
     "json", "jsonc", "yaml", "yml", "toml", // Logs / diffs
     "log", "diff", "patch", // Docs
     "md", "txt",

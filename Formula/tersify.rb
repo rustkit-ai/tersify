@@ -1,15 +1,45 @@
+# This file lives in the main repo for reference.
+# The canonical formula is maintained in rustkit-ai/homebrew-tap.
+#
+# To install:
+#   brew tap rustkit-ai/tap
+#   brew install tersify
+#
+# SHA256 values are updated automatically by .github/workflows/release.yml
+# on each release.
+
 class Tersify < Formula
   desc "Universal LLM context compressor — pipe anything, get token-optimized output"
   homepage "https://github.com/rustkit-ai/tersify"
-  url "https://github.com/rustkit-ai/tersify/archive/refs/tags/v0.3.3.tar.gz"
-  sha256 "0fc51141572dd7439284cd5a6089922b510eedb04596b7bc63ef7d4281a478f4"
+  version "PLACEHOLDER_VERSION"
   license "MIT"
-  head "https://github.com/rustkit-ai/tersify.git", branch: "main"
 
-  depends_on "rust" => :build
+  on_macos do
+    on_arm do
+      url "https://github.com/rustkit-ai/tersify/releases/download/v#{version}/tersify-aarch64-apple-darwin.tar.gz"
+      sha256 "PLACEHOLDER_AARCH64_DARWIN"
+    end
+
+    on_intel do
+      url "https://github.com/rustkit-ai/tersify/releases/download/v#{version}/tersify-x86_64-apple-darwin.tar.gz"
+      sha256 "PLACEHOLDER_X86_64_DARWIN"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/rustkit-ai/tersify/releases/download/v#{version}/tersify-aarch64-unknown-linux-musl.tar.gz"
+      sha256 "PLACEHOLDER_AARCH64_LINUX"
+    end
+
+    on_intel do
+      url "https://github.com/rustkit-ai/tersify/releases/download/v#{version}/tersify-x86_64-unknown-linux-musl.tar.gz"
+      sha256 "PLACEHOLDER_X86_64_LINUX"
+    end
+  end
 
   def install
-    system "cargo", "install", *std_cargo_args
+    bin.install "tersify"
   end
 
   def post_install
@@ -20,7 +50,6 @@ class Tersify < Formula
 
   test do
     assert_match version.to_s, shell_output("#{bin}/tersify --version")
-    # Compression smoke test
     (testpath/"test.rs").write("// comment\nfn main() {\n    println!(\"hello\");\n}\n")
     output = shell_output("#{bin}/tersify #{testpath}/test.rs")
     assert_match "fn main()", output

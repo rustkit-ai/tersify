@@ -2,13 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tersify::error::{Result, TersifyError};
 
-/// LLM pricing used for cost-savings display (input $/M tokens, early 2026).
-const COST_MODELS: &[(&str, f64)] = &[
-    ("claude-sonnet-4.6", 3.00),
-    ("claude-opus-4.6", 15.00),
-    ("gpt-4o", 5.00),
-    ("gemini-2.5-pro", 1.25),
-];
+use tersify::MODEL_PRICING;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct LangStat {
@@ -86,6 +80,13 @@ pub fn reset() -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn run_json() -> anyhow::Result<()> {
+    let path = stats_path()?;
+    let stats = load(&path).unwrap_or_default();
+    println!("{}", serde_json::to_string_pretty(&stats)?);
+    Ok(())
+}
+
 pub fn run() -> anyhow::Result<()> {
     let path = stats_path()?;
     let stats = load(&path).unwrap_or_default();
@@ -111,7 +112,7 @@ pub fn run() -> anyhow::Result<()> {
     // Dollar cost savings
     println!();
     println!("  Cost saved (what you didn't pay for):");
-    for (model, price_per_m) in COST_MODELS {
+    for (model, _provider, price_per_m) in MODEL_PRICING {
         let saved_usd = saved as f64 / 1_000_000.0 * price_per_m;
         println!(
             "    {:<22} {:>8}   → {:>16}",
@@ -128,7 +129,7 @@ pub fn run() -> anyhow::Result<()> {
         let mut langs: Vec<(&String, &LangStat)> = stats.by_language.iter().collect();
         langs.sort_by(|a, b| b.1.saved().cmp(&a.1.saved()));
         for (lang, ls) in langs {
-            let lang_usd = ls.saved() as f64 / 1_000_000.0 * COST_MODELS[0].1; // sonnet pricing
+            let lang_usd = ls.saved() as f64 / 1_000_000.0 * MODEL_PRICING[1].2; // sonnet pricing
             println!(
                 "    {:<16} {:>9} → {:>9}  ({:.0}%)   {:>16}",
                 lang,
