@@ -38,7 +38,7 @@ const INCLUDE_EXT: &[&str] = &[
     "kt", "kts", // Web
     "html", "htm", "css", // SQL
     "sql", // C#
-    "cs", // PHP
+    "cs",  // PHP
     "php", "phtml", // Shell
     "sh", "bash", "zsh", "fish", // Data / config
     "json", "jsonc", "yaml", "yml", "toml", // Logs / diffs
