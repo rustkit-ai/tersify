@@ -153,22 +153,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute SHA256 for each binary
+      - name: Compute SHA256 of source archive
         id: sha
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          BASE="https://github.com/rustkit-ai/tersify/releases/download/${GITHUB_REF_NAME}"
+          SOURCE_URL="https://github.com/rustkit-ai/tersify/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          SOURCE_SHA=$(curl -fsSL "$SOURCE_URL" | sha256sum | awk '{print $1}')
 
-          fetch_sha() {
-            curl -fsSL "$1.sha256" | awk '{print $1}'
-          }
-
-          echo "version=$VERSION"                                                                             >> $GITHUB_OUTPUT
-          echo "aarch64_darwin=$(fetch_sha $BASE/tersify-aarch64-apple-darwin.tar.gz)"                       >> $GITHUB_OUTPUT
-          echo "x86_64_darwin=$(fetch_sha $BASE/tersify-x86_64-apple-darwin.tar.gz)"                         >> $GITHUB_OUTPUT
-          echo "aarch64_linux=$(fetch_sha $BASE/tersify-aarch64-unknown-linux-musl.tar.gz)"                   >> $GITHUB_OUTPUT
-          echo "x86_64_linux=$(fetch_sha $BASE/tersify-x86_64-unknown-linux-musl.tar.gz)"                     >> $GITHUB_OUTPUT
+          echo "version=$VERSION"          >> $GITHUB_OUTPUT
+          echo "source_url=$SOURCE_URL"    >> $GITHUB_OUTPUT
+          echo "source_sha=$SOURCE_SHA"    >> $GITHUB_OUTPUT
 
       - name: Checkout tap repo
         uses: actions/checkout@v4
@@ -181,11 +176,10 @@ jobs:
         shell: bash
         run: |
           F="tap/Formula/tersify.rb"
-          sed -i "s/version \".*\"/version \"${{ steps.sha.outputs.version }}\"/"   "$F"
-          sed -i "s/PLACEHOLDER_AARCH64_DARWIN/${{ steps.sha.outputs.aarch64_darwin }}/"  "$F"
-          sed -i "s/PLACEHOLDER_X86_64_DARWIN/${{ steps.sha.outputs.x86_64_darwin }}/"    "$F"
-          sed -i "s/PLACEHOLDER_AARCH64_LINUX/${{ steps.sha.outputs.aarch64_linux }}/"    "$F"
-          sed -i "s/PLACEHOLDER_X86_64_LINUX/${{ steps.sha.outputs.x86_64_linux }}/"      "$F"
+          # Update source archive URL (replace the tag in the url line)
+          sed -i "s|url \"https://github.com/rustkit-ai/tersify/archive/refs/tags/v[^\"]*\"|url \"${{ steps.sha.outputs.source_url }}\"|" "$F"
+          # Update sha256 (the one right after the url line — matches any hex string)
+          sed -i "s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"${{ steps.sha.outputs.source_sha }}\"/" "$F"
 
       - name: Commit + push to tap
         working-directory: tap
