@@ -149,6 +149,7 @@ jobs:
     name: Update Homebrew tap
     needs: release
     runs-on: ubuntu-latest
+    environment: cicd
 
     steps:
       - uses: actions/checkout@v4
